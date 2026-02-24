@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 
-import type { AnalysisResult, CompositionResult, GenerateTabRequest } from '@ai-guitar-composer/shared';
+import type { AnalysisResult, CompositionResult, GenerateTabRequest } from '@riffmaster/shared';
 
 export interface CacheClient {
   get(key: string): Promise<string | null>;

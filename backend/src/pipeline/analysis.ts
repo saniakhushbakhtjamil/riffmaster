@@ -1,4 +1,4 @@
-import type { AnalysisResult, GenerateTabRequest } from '@ai-guitar-composer/shared';
+import type { AnalysisResult, GenerateTabRequest } from '@riffmaster/shared';
 
 const COMMON_PROGRESSIONS: Array<{ key: string; chords: string[] }> = [
   { key: 'C major', chords: ['C', 'G', 'Am', 'F'] },

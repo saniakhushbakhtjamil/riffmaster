@@ -1,4 +1,4 @@
-import type { TabModel } from '@ai-guitar-composer/shared';
+import type { TabModel } from '@riffmaster/shared';
 
 interface TabDisplayProps {
   ascii: string | null;

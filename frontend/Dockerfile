@@ -6,7 +6,7 @@ COPY package.json pnpm-workspace.yaml ./
 COPY ../shared ./shared
 COPY frontend ./frontend
 
-RUN corepack enable pnpm && pnpm install --filter @ai-guitar-composer/frontend... --filter @ai-guitar-composer/shared...
+RUN corepack enable pnpm && pnpm install --filter @riffmaster/frontend... --filter @riffmaster/shared...
 
 WORKDIR /app/frontend
 RUN pnpm build

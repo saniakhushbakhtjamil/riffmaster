@@ -3,7 +3,7 @@ import type {
   GenerateTabRequest,
   GuitarisationResult,
   TabModel
-} from '@ai-guitar-composer/shared';
+} from '@riffmaster/shared';
 
 export async function runGuitarisationStep(
   composition: CompositionResult,

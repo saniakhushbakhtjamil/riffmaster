@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { GenerateTabRequest, GenerateTabResponse, TabModel } from '@ai-guitar-composer/shared';
+import type { GenerateTabRequest, GenerateTabResponse, TabModel } from '@riffmaster/shared';
 
 import { generateTab } from './api/client';
 import { ChordForm } from './components/ChordForm';

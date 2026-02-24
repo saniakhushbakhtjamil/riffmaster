@@ -2,7 +2,7 @@ import type {
   AnalysisResult,
   CompositionResult,
   TabNote
-} from '@ai-guitar-composer/shared';
+} from '@riffmaster/shared';
 
 export async function runCompositionStep(analysis: AnalysisResult): Promise<CompositionResult> {
   const notes: TabNote[] = [];

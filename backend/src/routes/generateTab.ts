@@ -5,7 +5,7 @@ import {
   generateTabRequestSchema,
   generateTabResponseSchema,
   type GenerateTabRequest
-} from '@ai-guitar-composer/shared';
+} from '@riffmaster/shared';
 
 import { runGenerateTabPipeline } from '../pipeline/index.js';
 

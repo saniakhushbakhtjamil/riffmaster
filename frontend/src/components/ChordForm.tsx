@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { GenerateTabRequest } from '@ai-guitar-composer/shared';
+import type { GenerateTabRequest } from '@riffmaster/shared';
 
 interface ChordFormProps {
   onSubmit: (payload: GenerateTabRequest) => Promise<void>;

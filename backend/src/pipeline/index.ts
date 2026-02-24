@@ -4,7 +4,7 @@ import {
   type GenerateTabRequest,
   type GenerateTabResponse,
   type GuitarisationResult
-} from '@ai-guitar-composer/shared';
+} from '@riffmaster/shared';
 
 import { createCacheClient, getAnalysisCacheKey, getCompositionCacheKey, getGuitarisationCacheKey } from '../services/cache.js';
 import { renderAsciiTab } from '../tab/renderAsciiTab.js';

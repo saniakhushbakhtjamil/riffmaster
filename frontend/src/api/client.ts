@@ -3,7 +3,7 @@ import {
   generateTabResponseSchema,
   type GenerateTabRequest,
   type GenerateTabResponse
-} from '@ai-guitar-composer/shared';
+} from '@riffmaster/shared';
 
 function getApiBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL ?? '';

@@ -1,4 +1,4 @@
-import type { TabModel } from '@ai-guitar-composer/shared';
+import type { TabModel } from '@riffmaster/shared';
 
 export function renderAsciiTab(model: TabModel): string {
   const beats = model.notes.reduce((max, note) => max + note.durationBeats, 0);

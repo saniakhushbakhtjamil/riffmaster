@@ -1,11 +1,11 @@
 {
-  "name": "ai-guitar-composer",
+  "name": "riffmaster",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @ai-guitar-composer/shared... build && pnpm --parallel --filter @ai-guitar-composer/frontend... --filter @ai-guitar-composer/backend... dev",
-    "build": "pnpm --filter @ai-guitar-composer/shared... build && pnpm --filter @ai-guitar-composer/backend... build && pnpm --filter @ai-guitar-composer/frontend... build",
+    "dev": "pnpm --filter @riffmaster/shared... build && pnpm --parallel --filter @riffmaster/frontend... --filter @riffmaster/backend... dev",
+    "build": "pnpm --filter @riffmaster/shared... build && pnpm --filter @riffmaster/backend... build && pnpm --filter @riffmaster/frontend... build",
     "lint": "eslint .",
     "format": "prettier . --check",
     "format:write": "prettier . --write",
