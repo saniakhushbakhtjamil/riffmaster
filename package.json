@@ -1,0 +1,30 @@
+{
+  "name": "ai-guitar-composer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @ai-guitar-composer/shared... build && pnpm --parallel --filter @ai-guitar-composer/frontend... --filter @ai-guitar-composer/backend... dev",
+    "build": "pnpm --filter @ai-guitar-composer/shared... build && pnpm --filter @ai-guitar-composer/backend... build && pnpm --filter @ai-guitar-composer/frontend... build",
+    "lint": "eslint .",
+    "format": "prettier . --check",
+    "format:write": "prettier . --write",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.9.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
+

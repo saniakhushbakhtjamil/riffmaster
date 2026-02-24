@@ -1,0 +1,2 @@
+Guitarisation prompt placeholder: map the composed pattern onto playable frets and strings for standard-tuned guitar suitable for beginners.
+

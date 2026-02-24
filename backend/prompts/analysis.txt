@@ -1,0 +1,2 @@
+Analysis prompt placeholder: given a song title and artist, determine the song key, capo position, and a beginner-friendly chord progression.
+
