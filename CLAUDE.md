@@ -67,9 +67,9 @@ Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `BeatGroup`,
 `POST /api/generate-tab` → `runGenerateTabPipeline()` → four sequential steps:
 
 1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, tempo (BPM), chord progression, strumming pattern, and playing guide
-2. **voicing.ts** — deterministic (no AI); uses `tonal` to compute chord tones and map every valid `(stringIndex, fret)` pair per chord within frets 0–4 of the capo position. Results are passed directly to the composition prompt.
-3. **composition.ts** — calls `claude-opus-4-6`; receives pre-computed voicing positions per chord and must only use those frets. Returns beat groups tuned for the chosen style (arpeggio / strumming) targeting intermediate guitarists.
-4. **validation.ts** — deterministic (no AI); tonal-based post-processing: corrects notes that are not chord tones (nearest fret on same string), trims stretches > 4 frets, logs position jumps > 5 frets. Runs in ~0ms.
+2. **voicing.ts** — deterministic (no AI); uses `tonal` to compute two things: (a) chord voicings — valid `(stringIndex, fret)` pairs per chord within frets 0–4; (b) scale positions — pentatonic scale tones for the song key across frets 0–12. Both are passed into the composition prompt.
+3. **composition.ts** — calls `claude-opus-4-6`; two-layer prompt: harmonic layer (chord voicings, frets 0–4) for chord anchors, melodic layer (scale positions, frets 0–12) for riffs, licks, and fills. Returns beat groups mixing chords and single-note runs.
+4. **validation.ts** — deterministic (no AI); tonal-based post-processing: accepts notes that are chord tones or scale tones; corrects out-of-scale notes to nearest scale tone within ±3 frets; trims stretches > 5 frets; logs position jumps > 7 frets. Runs in ~0ms.
 5. **guitarisation.ts** — mechanical wrapper: packages validated beat groups into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo from analysis.
 
 Steps 1, 3, and 5 are independently cached (1-hour TTL) by `services/cache.ts` (Redis or in-memory Map). Voicing and validation are pure functions — they are not cached separately.
@@ -77,7 +77,7 @@ Steps 1, 3, and 5 are independently cached (1-hour TTL) by `services/cache.ts` (
 ASCII rendering is a separate utility: `tab/renderAsciiTab.ts`.
 
 ### Anthropic Client (`backend/src/services/anthropic.ts`)
-Singleton factory — creates one `Anthropic` instance per process. Throws clearly if `ANTHROPIC_API_KEY` is missing.
+Singleton factory — creates one `Anthropic` instance per process. Throws clearly if `ANTHROPIC_API_KEY` is missing. Configured with `maxRetries: 5` and `timeout: 120s` to handle transient 529 overloaded errors from the API.
 
 ### Structured Outputs
 Both AI steps use `client.messages.create()` with `thinking: { type: 'adaptive' }`. The system prompt instructs Claude to respond with a single JSON object. The response text block is extracted, `JSON.parse()`d, and validated against the Zod schema at runtime.
@@ -120,7 +120,7 @@ The backend logs all Claude API interactions and pipeline events to stdout:
 [analysis] → sending to Claude:
 [analysis] ← received from Claude:   # stop_reason, usage, raw text preview
 
-[composition] → sending to Claude:   # style, totalBeats, voicings count
+[composition] → sending to Claude:   # style, totalBeats, scale name, voicings count
 [composition] ← received from Claude:
 
 [validation] corrections: N, warnings: M
@@ -149,9 +149,9 @@ The backend logs all Claude API interactions and pipeline events to stdout:
 | `backend/src/routes/generateTab.ts` | POST /api/generate-tab — full pipeline endpoint |
 | `backend/src/routes/ratings.ts` | POST /api/ratings, GET /api/ratings/:song/:artist |
 | `backend/src/pipeline/analysis.ts` | Step 1 — Claude: key, tempo, capo, chords, strumming, playing guide |
-| `backend/src/pipeline/voicing.ts` | Step 2a — tonal: chord → tones → valid fret positions per string |
-| `backend/src/pipeline/composition.ts` | Step 2b — Claude: beat groups using pre-computed voicing positions |
-| `backend/src/pipeline/validation.ts` | Step 2c — tonal: correct non-chord tones, trim stretches, log jumps |
+| `backend/src/pipeline/voicing.ts` | Step 2a — tonal: chord voicings (frets 0–4) + pentatonic scale positions (frets 0–12) |
+| `backend/src/pipeline/composition.ts` | Step 2b — Claude: harmonic beats (chord voicings) + melodic beats (riffs/licks/fills from scale) |
+| `backend/src/pipeline/validation.ts` | Step 2c — tonal: accept chord/scale tones, correct out-of-scale notes, trim stretches |
 | `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly from validated beat groups |
 | `backend/src/pipeline/index.ts` | Pipeline orchestrator + per-step caching |
 | `backend/src/tab/renderAsciiTab.ts` | TabModel → ASCII string |
@@ -181,8 +181,6 @@ Multiple `BeatNote` entries in a single `BeatGroup` are played **simultaneously*
 ## Current Status
 
 - v1.0.0 tagged on `main` — two-phase frontend, beat-group composition model
-- Active development on `feature/v2`:
-  - tonal-powered voicing pre-computation (chord accuracy guaranteed)
-  - tonal-based post-composition validation (instant, auto-corrects wrong frets)
-  - In-app rating system (playability + musicality) for user research
+- v2 merged — tonal voicing + validation, in-app rating system persisted to disk
+- v3 merged — riffs/licks/fills via pentatonic scale layer; Anthropic client retry hardening (maxRetries 5, timeout 120s)
 - Guitarisation is mechanical (no AI). Redis is optional — in-memory cache used by default in local dev.
