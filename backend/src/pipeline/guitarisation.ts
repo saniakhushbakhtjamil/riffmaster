@@ -15,7 +15,7 @@ export async function runGuitarisationStep(
     tuning: ['E', 'A', 'D', 'G', 'B', 'E'],
     tempo: analysis.tempo,
     timeSignature: req.timeSignature ?? '4/4',
-    notes: composition.notes
+    beats: composition.beats
   };
 
   return { tab: model };

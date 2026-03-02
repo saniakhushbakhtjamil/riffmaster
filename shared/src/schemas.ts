@@ -14,10 +14,14 @@ export const analysisResultSchema = z.object({
   playingGuide: z.string().min(1),
 });
 
-export const tabNoteSchema = z.object({
+export const beatNoteSchema = z.object({
   stringIndex: z.number().int().min(0).max(5),
   fret: z.number().int().min(0).max(24),
-  durationBeats: z.number().positive()
+});
+
+export const beatGroupSchema = z.object({
+  durationBeats: z.number().positive(),
+  notes: z.array(beatNoteSchema).min(1),
 });
 
 export const tabModelSchema = z.object({
@@ -31,12 +35,12 @@ export const tabModelSchema = z.object({
   ]),
   tempo: z.number().int().min(40).max(240),
   timeSignature: z.string().optional(),
-  notes: z.array(tabNoteSchema)
+  beats: z.array(beatGroupSchema)
 });
 
 export const compositionResultSchema = z.object({
   patternName: z.string().min(1),
-  notes: z.array(tabNoteSchema)
+  beats: z.array(beatGroupSchema)
 });
 
 export const guitarisationResultSchema = z.object({

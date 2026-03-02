@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-RiffMaster is a full-stack TypeScript monorepo for an AI-assisted guitar tab generator. Users input a song title, artist, and tempo; the app runs a 3-step pipeline (analysis → composition → guitarisation) and returns an ASCII guitar tab.
+RiffMaster is a full-stack TypeScript monorepo for an AI-assisted guitar tab generator. Users input a song title and artist; the app runs a 3-step pipeline (analysis → composition → guitarisation) and returns an ASCII guitar tab.
 
 ## Monorepo Structure
 
@@ -61,14 +61,14 @@ pnpm build
 ### Shared Package (`shared/src/`)
 Single source of truth for request/response contracts. All Zod schemas live in `schemas.ts`; TypeScript types are inferred from them in `types.ts`. Both backend and frontend import from `@riffmaster/shared`.
 
-Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `AnalysisResult`, `CompositionResult`, `GuitarisationResult`.
+Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `BeatGroup`, `BeatNote`, `AnalysisResult`, `CompositionResult`, `GuitarisationResult`.
 
 ### Backend Pipeline (`backend/src/pipeline/`)
 `POST /api/generate-tab` → `runGenerateTabPipeline()` → three sequential steps:
 
-1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, and chord progression for the song
-2. **composition.ts** — calls `claude-opus-4-6` with adaptive thinking; returns guitar notes (stringIndex, fret, durationBeats) based on the analysis
-3. **guitarisation.ts** — mechanical wrapper: packages notes into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo
+1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, tempo (BPM), chord progression, strumming pattern, and playing guide for the song
+2. **composition.ts** — calls `claude-opus-4-6` with adaptive thinking; returns **beat groups** (`{ durationBeats, notes: [{ stringIndex, fret }] }`) — multiple notes in one group are played simultaneously
+3. **guitarisation.ts** — mechanical wrapper: packages beat groups into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo from the analysis result
 
 Each step's result is independently cached (1-hour TTL) by `services/cache.ts`, which transparently uses Redis (`REDIS_URL` env) or falls back to an in-memory Map.
 
@@ -78,17 +78,22 @@ ASCII rendering is a separate utility: `tab/renderAsciiTab.ts`.
 Singleton factory — creates one `Anthropic` instance per process. Throws clearly if `ANTHROPIC_API_KEY` is missing.
 
 ### Structured Outputs
-Both AI steps use `client.messages.parse()` with `zodOutputFormat(schema)` from `@anthropic-ai/sdk/helpers/zod`. This guarantees Claude's response is valid JSON matching the Zod schema. `parsed_output` is validated at runtime; a null result throws an error.
+Both AI steps use `client.messages.create()` with `thinking: { type: 'adaptive' }`. The system prompt instructs Claude to respond with a single JSON object. The response text block is extracted, `JSON.parse()`d, and validated against the Zod schema at runtime.
+
+> Note: `zodOutputFormat` / `messages.parse()` from the SDK are not used — they require Zod v4 (`z.toJSONSchema()`), which is incompatible with the Zod v3 used in this project.
 
 ### Backend Entry (`backend/src/`)
 - `index.ts` — loads `.env`, starts server
 - `app.ts` — Express app factory, attaches CORS and routes
-- `routes/generateTab.ts` — validates request with Zod, calls pipeline, returns response
+- `routes/analyse.ts` — validates request, runs only the analysis step, returns `AnalysisResult`
+- `routes/generateTab.ts` — validates request, runs full 3-step pipeline, returns `GenerateTabResponse`
 
 ### Frontend Data Flow
-`ChordForm` → `client.ts` `generateTab()` → `POST /api/generate-tab` → `TabDisplay`
+Two-phase flow:
+1. `ChordForm` → `client.ts` `analyseTab()` → `POST /api/analyse` → `AnalysisDisplay` (shows key, tempo, chords, strumming pattern, playing guide)
+2. `client.ts` `generateTab()` → `POST /api/generate-tab` → `TabDisplay` (shows ASCII tab)
 
-`frontend/src/api/client.ts` validates both the outgoing request and incoming response with Zod schemas from `@riffmaster/shared`. The Vite dev server proxies `/api/*` to `http://localhost:4000`.
+Since both endpoints use the same analysis cache key, the Claude call for analysis only happens once per unique song+artist pair. The Vite dev server proxies `/api/*` to `http://localhost:4000`.
 
 ## Environment Variables
 
@@ -127,14 +132,29 @@ The backend logs all Claude API interactions to stdout:
 | `shared/src/types.ts` | TypeScript types inferred from schemas |
 | `backend/src/services/anthropic.ts` | Singleton Anthropic client |
 | `backend/src/services/cache.ts` | Dual in-memory/Redis cache, 1h TTL |
-| `backend/src/pipeline/analysis.ts` | Step 1 — Claude: key, capo, chord progression |
-| `backend/src/pipeline/composition.ts` | Step 2 — Claude: guitar notes |
-| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly |
+| `backend/src/routes/analyse.ts` | POST /api/analyse — analysis-only endpoint |
+| `backend/src/routes/generateTab.ts` | POST /api/generate-tab — full pipeline endpoint |
+| `backend/src/pipeline/analysis.ts` | Step 1 — Claude: key, tempo, capo, chords, strumming, playing guide |
+| `backend/src/pipeline/composition.ts` | Step 2 — Claude: beat groups (simultaneous notes per time slot) |
+| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly from beat groups |
 | `backend/src/pipeline/index.ts` | Pipeline orchestrator + per-step caching |
 | `backend/src/tab/renderAsciiTab.ts` | TabModel → ASCII string |
-| `frontend/src/components/ChordForm.tsx` | Input form |
+| `frontend/src/components/ChordForm.tsx` | Input form (song title + artist) |
+| `frontend/src/components/AnalysisDisplay.tsx` | Shows analysis results between the two API phases |
 | `frontend/src/components/TabDisplay.tsx` | ASCII tab output display |
 | `frontend/src/api/client.ts` | Typed API client with Zod validation |
+
+## Data Model — Beat Groups
+
+The composition and tab model use a **beat-group** structure rather than a flat note list:
+
+```
+TabModel.beats: BeatGroup[]
+  BeatGroup { durationBeats: number; notes: BeatNote[] }
+  BeatNote  { stringIndex: number; fret: number }
+```
+
+Multiple `BeatNote` entries in a single `BeatGroup` are played **simultaneously** (chords, arpeggios). `durationBeats` applies to the whole group. The renderer (`renderAsciiTab.ts`) inserts `|` bar separators based on the `timeSignature` numerator and aligns columns by the widest fret number in each group.
 
 ## Current Status
 

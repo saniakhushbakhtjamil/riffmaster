@@ -1,6 +1,8 @@
 import type {
   analysisResultSchema,
   analysisStepInfoSchema,
+  beatGroupSchema,
+  beatNoteSchema,
   compositionResultSchema,
   compositionStepInfoSchema,
   generateTabRequestSchema,
@@ -9,7 +11,6 @@ import type {
   guitarisationStepInfoSchema,
   pipelineStepNameSchema,
   tabModelSchema,
-  tabNoteSchema,
   chordBeatSchema
 } from './schemas';
 import type { z } from 'zod';
@@ -22,7 +23,8 @@ export type AnalysisResult = z.infer<typeof analysisResultSchema>;
 export type CompositionResult = z.infer<typeof compositionResultSchema>;
 export type GuitarisationResult = z.infer<typeof guitarisationResultSchema>;
 
-export type TabNote = z.infer<typeof tabNoteSchema>;
+export type BeatNote = z.infer<typeof beatNoteSchema>;
+export type BeatGroup = z.infer<typeof beatGroupSchema>;
 export type TabModel = z.infer<typeof tabModelSchema>;
 
 export type AnalysisStepInfo = z.infer<typeof analysisStepInfoSchema>;

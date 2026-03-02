@@ -17,16 +17,20 @@ riffmaster/
 
 ```
 Browser
-  └─ ChordForm submits GenerateTabRequest
-       └─ api/client.ts: validateRequest → POST /api/generate-tab
+  └─ ChordForm submits GenerateTabRequest (songTitle + artistName)
+       │
+       ├─ Phase 1: api/client.ts analyseTab() → POST /api/analyse
+       │    └─ routes/analyse.ts: validateRequest → runAnalysisStep() (with cache)
+       │         └─ [cache miss] analysis.ts → Claude API → AnalysisResult → cache
+       │    └─ AnalysisDisplay renders key, tempo, chords, strumming pattern, guide
+       │
+       └─ Phase 2: api/client.ts generateTab() → POST /api/generate-tab
             └─ routes/generateTab.ts: validateRequest → runGenerateTabPipeline()
-                 ├─ [cache miss] analysis.ts    → Claude API → AnalysisResult    → cache
+                 ├─ [cache hit]  analysis.ts    → AnalysisResult (from cache)
                  ├─ [cache miss] composition.ts → Claude API → CompositionResult → cache
                  ├─ [cache miss] guitarisation.ts → TabModel → cache
                  └─ renderAsciiTab(tab) → GenerateTabResponse
-            └─ validateResponse → JSON
-       └─ api/client.ts: validateResponse → GenerateTabResponse
-  └─ TabDisplay renders ASCII tab
+            └─ TabDisplay renders ASCII tab
 ```
 
 ---
@@ -49,7 +53,7 @@ Express API server + 3-step AI pipeline.
 
 | Layer | Files | Role |
 |-------|-------|------|
-| HTTP | `app.ts`, `routes/generateTab.ts` | CORS, body parsing, Zod validation, error handling |
+| HTTP | `app.ts`, `routes/analyse.ts`, `routes/generateTab.ts` | CORS, body parsing, Zod validation, error handling |
 | Pipeline | `pipeline/index.ts` | Orchestrates 3 steps + per-step caching |
 | AI Steps | `pipeline/analysis.ts`, `pipeline/composition.ts` | Claude API calls with structured output |
 | Mechanical Step | `pipeline/guitarisation.ts` | Assembles `TabModel` from composition notes |
@@ -62,8 +66,9 @@ React SPA. No routing — single page with form → result flow.
 
 | Component | Role |
 |-----------|------|
-| `App.tsx` | State management, loading/error handling |
-| `ChordForm.tsx` | User input with client-side validation |
+| `App.tsx` | State management, two-phase loading/error handling |
+| `ChordForm.tsx` | User input (song title + artist) with client-side validation |
+| `AnalysisDisplay.tsx` | Shows analysis results between phase 1 and phase 2 |
 | `TabDisplay.tsx` | Renders ASCII tab + metadata |
 | `api/client.ts` | Typed fetch wrapper with Zod validation |
 
@@ -75,27 +80,35 @@ React SPA. No routing — single page with form → result flow.
 
 Both AI steps use `claude-opus-4-6` with `thinking: { type: 'adaptive' }`.
 
-Structured outputs are enforced using `client.messages.parse()` + `zodOutputFormat(schema)` from `@anthropic-ai/sdk/helpers/zod`. Claude's JSON response is automatically validated against the Zod schema.
+Structured outputs use `client.messages.create()` with a system prompt instructing Claude to respond with a single JSON object. The response text block is extracted, `JSON.parse()`d, and validated against the Zod schema at runtime.
+
+> `zodOutputFormat` / `messages.parse()` are not used — they require Zod v4, incompatible with this project's Zod v3.
 
 ### Step 1 — Analysis (`pipeline/analysis.ts`)
 
-**Input:** `GenerateTabRequest` (songTitle, artistName, tempo, style?, difficulty?)
+**Input:** `GenerateTabRequest` (songTitle, artistName, style?, difficulty?)
 
 **Prompt asks Claude for:**
 - The musical key (e.g. "G major", "A minor")
 - Capo position (0–12, where 0 = no capo)
+- Tempo (BPM, 40–240)
 - A chord progression of 4–8 chords with beat counts
+- A strumming pattern (e.g. "D DU UDU")
+- A brief playing guide (how to approach the song)
 
 **Output:** `AnalysisResult`
 ```typescript
 {
   key: string;
-  capoPosition: number; // 0–12
+  capoPosition: number;    // 0–12
+  tempo: number;           // 40–240 BPM
   chordProgression: Array<{ chord: string; beats: number }>;
+  strummingPattern: string;
+  playingGuide: string;
 }
 ```
 
-**Cache key:** `{ songTitle, artistName, tempo }`
+**Cache key:** `{ songTitle, artistName }`
 
 ---
 
@@ -104,8 +117,10 @@ Structured outputs are enforced using `client.messages.parse()` + `zodOutputForm
 **Input:** `AnalysisResult` + `GenerateTabRequest`
 
 **Prompt asks Claude for:**
-- Guitar notes across the full chord progression
-- One note per beat (or 0.5 for eighth notes)
+- Guitar notes as **beat groups** — each group is a time slot with one or more simultaneous notes
+- `durationBeats` lives on the group (not individual notes); multiple notes in a group = played simultaneously
+- Sum of all `durationBeats` must equal `totalBeats` (derived from the chord progression)
+- Style guidance: arpeggio = 1–3 notes per beat in a rolling pattern; strumming = 4–6 strings per beat
 - Frets that actually form the chords in standard tuning
 - A pattern name (e.g. "fingerpicked-arpeggio")
 
@@ -124,10 +139,12 @@ Structured outputs are enforced using `client.messages.parse()` + `zodOutputForm
 ```typescript
 {
   patternName: string;
-  notes: Array<{
-    stringIndex: number; // 0–5
-    fret: number;        // 0–24
-    durationBeats: number; // positive
+  beats: Array<{
+    durationBeats: number;          // positive — duration of this time slot
+    notes: Array<{
+      stringIndex: number;          // 0–5
+      fret: number;                 // 0–24
+    }>;                             // 1+ notes played simultaneously
   }>;
 }
 ```
@@ -138,10 +155,11 @@ Structured outputs are enforced using `client.messages.parse()` + `zodOutputForm
 
 ### Step 3 — Guitarisation (`pipeline/guitarisation.ts`)
 
-Mechanical step — no AI. Wraps notes into a `TabModel`.
+Mechanical step — no AI. Wraps beat groups into a `TabModel`.
 
 - Sets tuning to standard: `['E', 'A', 'D', 'G', 'B', 'E']`
-- Copies `tempo` and `timeSignature` from the original request
+- Uses `tempo` from `AnalysisResult` (not from the original request)
+- Copies `timeSignature` from the original request if provided
 
 **Cache key:** stringified `CompositionResult`
 
@@ -189,8 +207,9 @@ AnalysisResult    → Step 1 output
 CompositionResult → Step 2 output
 GuitarisationResult → Step 3 output (contains TabModel)
 
-TabModel → { tuning[6], tempo, notes: TabNote[] }
-TabNote  → { stringIndex, fret, durationBeats }
+TabModel → { tuning[6], tempo, timeSignature?, beats: BeatGroup[] }
+BeatGroup → { durationBeats, notes: BeatNote[] }
+BeatNote  → { stringIndex, fret }
 ```
 
 ---
