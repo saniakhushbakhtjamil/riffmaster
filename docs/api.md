@@ -4,9 +4,9 @@ Base URL (local dev): `http://localhost:4000`
 
 ---
 
-## POST `/api/generate-tab`
+## POST `/api/analyse`
 
-Runs the 3-step AI pipeline and returns an ASCII guitar tab.
+Runs only the analysis step and returns song metadata. Used by the frontend to show preliminary results before the full tab is generated.
 
 ### Request
 
@@ -16,7 +16,6 @@ Runs the 3-step AI pipeline and returns an ASCII guitar tab.
 |-------|------|----------|-------------|-------------|
 | `songTitle` | string | yes | 1–200 chars | Song name |
 | `artistName` | string | yes | 1–200 chars | Artist/band name |
-| `tempo` | integer | yes | 40–220 | Tempo in BPM |
 | `timeSignature` | string | no | — | e.g. `"4/4"` |
 | `style` | string | no | `"strumming"` \| `"arpeggio"` \| `"fingerstyle"` | Playing style hint for Claude |
 | `difficulty` | string | no | `"beginner"` \| `"intermediate"` \| `"advanced"` | Complexity hint for Claude |
@@ -26,7 +25,73 @@ Runs the 3-step AI pipeline and returns an ASCII guitar tab.
 {
   "songTitle": "Wonderwall",
   "artistName": "Oasis",
-  "tempo": 90,
+  "style": "arpeggio"
+}
+```
+
+### Response
+
+**Content-Type:** `application/json`
+**Status:** `200 OK`
+
+```typescript
+{
+  key: string;
+  capoPosition: number;    // 0–12 (0 = no capo)
+  tempo: number;           // 40–240 BPM
+  chordProgression: Array<{ chord: string; beats: number }>;
+  strummingPattern: string;
+  playingGuide: string;
+}
+```
+
+**Example:**
+```json
+{
+  "key": "F# minor",
+  "capoPosition": 2,
+  "tempo": 87,
+  "chordProgression": [
+    { "chord": "Em7", "beats": 4 },
+    { "chord": "G",   "beats": 4 },
+    { "chord": "Dsus4","beats": 4 },
+    { "chord": "A7sus4","beats": 4 }
+  ],
+  "strummingPattern": "D DU UDU",
+  "playingGuide": "Use a capo on the 2nd fret. The chord shapes are Em7, G, Dsus4, and A7sus4..."
+}
+```
+
+### Error Responses
+
+| Status | Cause | Body |
+|--------|-------|------|
+| `400` | Invalid request body | `{ "error": "Invalid request: <details>" }` |
+| `500` | Claude API error | `{ "error": "<message>" }` |
+
+---
+
+## POST `/api/generate-tab`
+
+Runs the full 3-step AI pipeline and returns an ASCII guitar tab.
+
+### Request
+
+**Content-Type:** `application/json`
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `songTitle` | string | yes | 1–200 chars | Song name |
+| `artistName` | string | yes | 1–200 chars | Artist/band name |
+| `timeSignature` | string | no | — | e.g. `"4/4"` |
+| `style` | string | no | `"strumming"` \| `"arpeggio"` \| `"fingerstyle"` | Playing style hint for Claude |
+| `difficulty` | string | no | `"beginner"` \| `"intermediate"` \| `"advanced"` | Complexity hint for Claude |
+
+**Example:**
+```json
+{
+  "songTitle": "Wonderwall",
+  "artistName": "Oasis",
   "style": "arpeggio",
   "difficulty": "beginner"
 }
@@ -74,7 +139,10 @@ Runs the 3-step AI pipeline and returns an ASCII guitar tab.
       output: {
         key: string;
         capoPosition: number;
+        tempo: number;
         chordProgression: Array<{ chord: string; beats: number }>;
+        strummingPattern: string;
+        playingGuide: string;
       };
     };
     composition: {
@@ -106,7 +174,7 @@ Runs the 3-step AI pipeline and returns an ASCII guitar tab.
     "ascii": "e|--0---2---3---|\nB|--1---3---0---|\n...",
     "model": {
       "tuning": ["E", "A", "D", "G", "B", "E"],
-      "tempo": 90,
+      "tempo": 87,
       "notes": [
         { "stringIndex": 1, "fret": 0, "durationBeats": 1 },
         { "stringIndex": 2, "fret": 0, "durationBeats": 1 }
@@ -116,7 +184,7 @@ Runs the 3-step AI pipeline and returns an ASCII guitar tab.
   "metadata": {
     "songTitle": "Wonderwall",
     "artistName": "Oasis",
-    "tempo": 90,
+    "tempo": 87,
     "key": "F# minor",
     "capoPosition": 2,
     "chordProgression": [
@@ -165,7 +233,7 @@ Cache TTL is **1 hour** per step. Cache is keyed independently per step:
 
 | Step | Cache key inputs |
 |------|-----------------|
-| analysis | songTitle + artistName + tempo |
+| analysis | songTitle + artistName |
 | composition | full AnalysisResult |
 | guitarisation | full CompositionResult |
 
