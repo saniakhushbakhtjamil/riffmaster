@@ -8,7 +8,6 @@ export async function runAnalysisStep(req: GenerateTabRequest): Promise<Analysis
   const prompt = `You are a music theory expert. Analyze the following song and return a guitar arrangement analysis.
 
 Song: "${req.songTitle}" by ${req.artistName}
-Tempo: ${req.tempo} BPM
 ${req.style ? `Style: ${req.style}` : ''}
 ${req.difficulty ? `Difficulty: ${req.difficulty}` : ''}
 
@@ -16,6 +15,7 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
 {
   "key": "<musical key, e.g. G major or A minor>",
   "capoPosition": <integer 0-12, where 0 means no capo>,
+  "tempo": <integer BPM of the original song, 40-240>,
   "chordProgression": [
     { "chord": "<chord name>", "beats": <integer, typically 2 or 4> },
     ...4 to 8 chords total

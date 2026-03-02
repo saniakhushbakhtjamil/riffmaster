@@ -60,7 +60,7 @@ export async function runGenerateTabPipeline(
     guitarisation = JSON.parse(cachedGuitarisation) as GuitarisationResult;
     guitarisationFromCache = true;
   } else {
-    guitarisation = await runGuitarisationStep(composition, req);
+    guitarisation = await runGuitarisationStep(composition, analysis, req);
     await cache.set(guitarisationKey, JSON.stringify(guitarisation), 60 * 60);
   }
   timings.guitarisation = Date.now() - guitarisationStart;
@@ -75,7 +75,7 @@ export async function runGenerateTabPipeline(
     metadata: {
       songTitle: req.songTitle,
       artistName: req.artistName,
-      tempo: req.tempo,
+      tempo: analysis.tempo,
       key: analysis.key,
       capoPosition: analysis.capoPosition,
       chordProgression: analysis.chordProgression,

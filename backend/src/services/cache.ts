@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 
 import type { AnalysisResult, CompositionResult, GenerateTabRequest } from '@riffmaster/shared';
 
+
 export interface CacheClient {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ttlSeconds?: number): Promise<void>;
@@ -69,7 +70,6 @@ export function getAnalysisCacheKey(req: GenerateTabRequest): string {
   return `analysis:${stableStringify({
     songTitle: req.songTitle,
     artistName: req.artistName,
-    tempo: req.tempo
   })}`;
 }
 

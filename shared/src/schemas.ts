@@ -8,6 +8,7 @@ export const chordBeatSchema = z.object({
 export const analysisResultSchema = z.object({
   key: z.string().min(1),
   capoPosition: z.number().int().min(0).max(12),
+  tempo: z.number().int().min(40).max(240),
   chordProgression: z.array(chordBeatSchema).min(1)
 });
 
@@ -66,7 +67,6 @@ export const guitarisationStepInfoSchema = pipelineStepInfoBaseSchema.extend({
 export const generateTabRequestSchema = z.object({
   songTitle: z.string().min(1).max(200),
   artistName: z.string().min(1).max(200),
-  tempo: z.number().int().min(40).max(220),
   timeSignature: z.string().optional(),
   style: z.enum(['strumming', 'arpeggio', 'fingerstyle']).optional(),
   difficulty: z.enum(['beginner', 'intermediate', 'advanced']).optional()
@@ -80,7 +80,7 @@ export const generateTabResponseSchema = z.object({
   metadata: z.object({
     songTitle: z.string().min(1),
     artistName: z.string().min(1),
-    tempo: z.number().int().min(40).max(220),
+    tempo: z.number().int().min(40).max(240),
     key: z.string().min(1),
     capoPosition: z.number().int().min(0).max(12),
     chordProgression: z.array(chordBeatSchema).min(1),

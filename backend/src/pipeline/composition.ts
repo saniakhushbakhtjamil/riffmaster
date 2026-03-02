@@ -21,7 +21,7 @@ export async function runCompositionStep(
 Song: "${req.songTitle}" by ${req.artistName}
 Key: ${analysis.key}
 Capo: ${analysis.capoPosition}
-Tempo: ${req.tempo} BPM
+Tempo: ${analysis.tempo} BPM
 Chord progression: ${chordList}
 ${req.style ? `Style: ${req.style}` : 'Style: arpeggio'}
 ${req.difficulty ? `Difficulty: ${req.difficulty}` : 'Difficulty: beginner'}

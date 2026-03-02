@@ -10,7 +10,6 @@ interface ChordFormProps {
 export function ChordForm({ onSubmit, isLoading }: ChordFormProps) {
   const [songTitle, setSongTitle] = useState('Wonderwall');
   const [artistName, setArtistName] = useState('Oasis');
-  const [tempo, setTempo] = useState(90);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
@@ -22,15 +21,9 @@ export function ChordForm({ onSubmit, isLoading }: ChordFormProps) {
       return;
     }
 
-    if (tempo < 40 || tempo > 220) {
-      setError('Tempo should be between 40 and 220 BPM.');
-      return;
-    }
-
     const payload: GenerateTabRequest = {
       songTitle: songTitle.trim(),
       artistName: artistName.trim(),
-      tempo
     };
 
     await onSubmit(payload);
@@ -75,20 +68,6 @@ export function ChordForm({ onSubmit, isLoading }: ChordFormProps) {
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-1">
-          <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
-            Tempo (BPM)
-          </label>
-          <input
-            type="number"
-            value={tempo}
-            onChange={(e) => setTempo(Number(e.target.value))}
-            className="w-32 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            min={40}
-            max={220}
-          />
-        </div>
-
         <button
           type="submit"
           disabled={isLoading}
