@@ -126,6 +126,7 @@ The backend logs all Claude API interactions and pipeline events to stdout:
 [validation] corrections: N, warnings: M
 [pipeline] validation corrected N note(s)
 
+[ratings] loaded N rating(s) from disk       # on startup
 [ratings] saved: <id> — <song> by <artist> — playability:N musicality:N
 ```
 
@@ -143,7 +144,7 @@ The backend logs all Claude API interactions and pipeline events to stdout:
 | `shared/src/types.ts` | TypeScript types inferred from schemas |
 | `backend/src/services/anthropic.ts` | Singleton Anthropic client |
 | `backend/src/services/cache.ts` | Dual in-memory/Redis cache, 1h TTL |
-| `backend/src/services/ratingsStore.ts` | In-memory rating store (playability + musicality) |
+| `backend/src/services/ratingsStore.ts` | Rating store — persists to `backend/data/ratings.json` on every write, loads on startup |
 | `backend/src/routes/analyse.ts` | POST /api/analyse — analysis-only endpoint |
 | `backend/src/routes/generateTab.ts` | POST /api/generate-tab — full pipeline endpoint |
 | `backend/src/routes/ratings.ts` | POST /api/ratings, GET /api/ratings/:song/:artist |

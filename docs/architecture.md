@@ -203,7 +203,8 @@ Mechanical step — no AI. Wraps beat groups into a `TabModel`.
 Used for user research — collecting playability and musicality signal on generated tabs.
 
 **Backend:**
-- `services/ratingsStore.ts` — in-memory store (`StoredRating[]`). Data persists for the lifetime of the process; cleared on restart. Sufficient for the research phase.
+- `services/ratingsStore.ts` — file-backed store. On startup it reads `backend/data/ratings.json` into memory; on every `saveRating()` call it rewrites the file atomically. Survives process restarts. Falls back gracefully if the file is missing or corrupt.
+- `backend/data/ratings.json` — the live data file. Gitignored (user data). The `data/` directory is tracked via `.gitkeep` so it exists on a fresh clone.
 - `POST /api/ratings` — saves a rating (see API reference)
 - `GET /api/ratings/:songTitle/:artistName` — returns all ratings for a song
 
