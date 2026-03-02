@@ -228,6 +228,80 @@ Runs the full 3-step AI pipeline and returns an ASCII guitar tab.
 
 ---
 
+## POST `/api/ratings`
+
+Save a user rating for a generated tab. Called after the tab is displayed.
+
+### Request
+
+**Content-Type:** `application/json`
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `songTitle` | string | yes | 1–200 chars | Song name |
+| `artistName` | string | yes | 1–200 chars | Artist/band name |
+| `playability` | integer | yes | 1–5 | How easy/natural the tab is to play |
+| `musicality` | integer | yes | 1–5 | How closely it sounds like the song |
+| `comment` | string | no | max 500 chars | Optional free-text feedback |
+
+**Example:**
+```json
+{
+  "songTitle": "Wonderwall",
+  "artistName": "Oasis",
+  "playability": 4,
+  "musicality": 5,
+  "comment": "Great arpeggio pattern, very natural fingering"
+}
+```
+
+### Response
+
+**Status:** `201 Created`
+
+```json
+{
+  "id": "1709384400000-ab3f2c",
+  "createdAt": "2026-03-02T15:00:00.000Z"
+}
+```
+
+### Error Responses
+
+| Status | Cause | Body |
+|--------|-------|------|
+| `400` | Invalid request body | `{ "error": "Invalid request: <details>" }` |
+
+---
+
+## GET `/api/ratings/:songTitle/:artistName`
+
+Retrieve all ratings for a specific song. URL-encode song title and artist name.
+
+**Example:** `GET /api/ratings/Wonderwall/Oasis`
+
+### Response
+
+**Status:** `200 OK`
+
+```json
+[
+  {
+    "id": "1709384400000-ab3f2c",
+    "songTitle": "Wonderwall",
+    "artistName": "Oasis",
+    "playability": 4,
+    "musicality": 5,
+    "comment": "Great arpeggio pattern",
+    "createdAt": "2026-03-02T15:00:00.000Z"
+  }
+]
+```
+
+Returns an empty array `[]` if no ratings exist for that song.
+
+---
+
 ## GET `/health`
 
 Liveness check.

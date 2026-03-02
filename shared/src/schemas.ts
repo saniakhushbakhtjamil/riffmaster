@@ -43,6 +43,19 @@ export const compositionResultSchema = z.object({
   beats: z.array(beatGroupSchema)
 });
 
+export const ratingRequestSchema = z.object({
+  songTitle: z.string().min(1).max(200),
+  artistName: z.string().min(1).max(200),
+  playability: z.number().int().min(1).max(5),
+  musicality: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+});
+
+export const ratingResponseSchema = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+});
+
 export const guitarisationResultSchema = z.object({
   tab: tabModelSchema
 });

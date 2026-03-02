@@ -1,13 +1,16 @@
 import type { TabModel } from '@riffmaster/shared';
+import { RatingWidget } from './RatingWidget';
 
 interface TabDisplayProps {
   ascii: string | null;
   model: TabModel | null;
   isLoading: boolean;
   error: string | null;
+  songTitle?: string;
+  artistName?: string;
 }
 
-export function TabDisplay({ ascii, model, isLoading, error }: TabDisplayProps) {
+export function TabDisplay({ ascii, model, isLoading, error, songTitle, artistName }: TabDisplayProps) {
   return (
     <section className="mt-6 w-full max-w-3xl rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
@@ -28,7 +31,9 @@ export function TabDisplay({ ascii, model, isLoading, error }: TabDisplayProps) 
           Tuning: {model.tuning.join(' ')} • Tempo: {model.tempo} bpm
         </p>
       )}
+      {ascii && songTitle && artistName && (
+        <RatingWidget songTitle={songTitle} artistName={artistName} />
+      )}
     </section>
   );
 }
-

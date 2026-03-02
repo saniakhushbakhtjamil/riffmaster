@@ -11,6 +11,7 @@ import { renderAsciiTab } from '../tab/renderAsciiTab.js';
 import { runAnalysisStep } from './analysis.js';
 import { runCompositionStep } from './composition.js';
 import { runGuitarisationStep } from './guitarisation.js';
+import { validateAndCorrect } from './validation.js';
 
 export async function runGenerateTabPipeline(
   req: GenerateTabRequest
@@ -22,6 +23,7 @@ export async function runGenerateTabPipeline(
   const guitarisationKeyBase = 'guitarisation';
 
   const timings: { [K in 'analysis' | 'composition' | 'guitarisation']?: number } = {};
+  const response_warnings: string[] = [];
 
   let analysisFromCache = false;
   let compositionFromCache = false;
@@ -47,7 +49,15 @@ export async function runGenerateTabPipeline(
     composition = JSON.parse(cachedComposition) as CompositionResult;
     compositionFromCache = true;
   } else {
-    composition = await runCompositionStep(analysis, req);
+    const raw = await runCompositionStep(analysis, req);
+    const { result: validated, corrections, warnings: validationWarnings } = validateAndCorrect(raw, analysis);
+    composition = validated;
+    if (corrections > 0) {
+      console.log(`[pipeline] validation corrected ${corrections} note(s)`);
+    }
+    if (validationWarnings.length > 0) {
+      response_warnings.push(...validationWarnings);
+    }
     await cache.set(compositionKey, JSON.stringify(composition), 60 * 60);
   }
   timings.composition = Date.now() - compositionStart;
@@ -101,7 +111,7 @@ export async function runGenerateTabPipeline(
         output: guitarisation
       }
     },
-    warnings: []
+    warnings: response_warnings
   };
 
   return response;

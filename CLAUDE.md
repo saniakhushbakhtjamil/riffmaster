@@ -64,13 +64,15 @@ Single source of truth for request/response contracts. All Zod schemas live in `
 Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `BeatGroup`, `BeatNote`, `AnalysisResult`, `CompositionResult`, `GuitarisationResult`.
 
 ### Backend Pipeline (`backend/src/pipeline/`)
-`POST /api/generate-tab` → `runGenerateTabPipeline()` → three sequential steps:
+`POST /api/generate-tab` → `runGenerateTabPipeline()` → four sequential steps:
 
-1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, tempo (BPM), chord progression, strumming pattern, and playing guide for the song
-2. **composition.ts** — calls `claude-opus-4-6` with adaptive thinking; returns **beat groups** (`{ durationBeats, notes: [{ stringIndex, fret }] }`) — multiple notes in one group are played simultaneously
-3. **guitarisation.ts** — mechanical wrapper: packages beat groups into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo from the analysis result
+1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, tempo (BPM), chord progression, strumming pattern, and playing guide
+2. **voicing.ts** — deterministic (no AI); uses `tonal` to compute chord tones and map every valid `(stringIndex, fret)` pair per chord within frets 0–4 of the capo position. Results are passed directly to the composition prompt.
+3. **composition.ts** — calls `claude-opus-4-6`; receives pre-computed voicing positions per chord and must only use those frets. Returns beat groups tuned for the chosen style (arpeggio / strumming) targeting intermediate guitarists.
+4. **validation.ts** — deterministic (no AI); tonal-based post-processing: corrects notes that are not chord tones (nearest fret on same string), trims stretches > 4 frets, logs position jumps > 5 frets. Runs in ~0ms.
+5. **guitarisation.ts** — mechanical wrapper: packages validated beat groups into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo from analysis.
 
-Each step's result is independently cached (1-hour TTL) by `services/cache.ts`, which transparently uses Redis (`REDIS_URL` env) or falls back to an in-memory Map.
+Steps 1, 3, and 5 are independently cached (1-hour TTL) by `services/cache.ts` (Redis or in-memory Map). Voicing and validation are pure functions — they are not cached separately.
 
 ASCII rendering is a separate utility: `tab/renderAsciiTab.ts`.
 
@@ -86,12 +88,16 @@ Both AI steps use `client.messages.create()` with `thinking: { type: 'adaptive' 
 - `index.ts` — loads `.env`, starts server
 - `app.ts` — Express app factory, attaches CORS and routes
 - `routes/analyse.ts` — validates request, runs only the analysis step, returns `AnalysisResult`
-- `routes/generateTab.ts` — validates request, runs full 3-step pipeline, returns `GenerateTabResponse`
+- `routes/generateTab.ts` — validates request, runs full pipeline, returns `GenerateTabResponse`
+- `routes/ratings.ts` — `POST /api/ratings` (save rating), `GET /api/ratings/:song/:artist` (retrieve)
+- `services/ratingsStore.ts` — in-memory rating store (sufficient for research phase)
 
 ### Frontend Data Flow
 Two-phase flow:
 1. `ChordForm` → `client.ts` `analyseTab()` → `POST /api/analyse` → `AnalysisDisplay` (shows key, tempo, chords, strumming pattern, playing guide)
-2. `client.ts` `generateTab()` → `POST /api/generate-tab` → `TabDisplay` (shows ASCII tab)
+2. `client.ts` `generateTab()` → `POST /api/generate-tab` → `TabDisplay` (shows ASCII tab + `RatingWidget`)
+
+After the tab is displayed, `RatingWidget` lets the user rate playability and musicality (1–5 stars each) with an optional comment. Ratings are submitted via `client.ts` `submitRating()` → `POST /api/ratings`.
 
 Since both endpoints use the same analysis cache key, the Claude call for analysis only happens once per unique song+artist pair. The Vite dev server proxies `/api/*` to `http://localhost:4000`.
 
@@ -108,14 +114,20 @@ Since both endpoints use the same analysis cache key, the Claude call for analys
 
 ## Console Logging
 
-The backend logs all Claude API interactions to stdout:
+The backend logs all Claude API interactions and pipeline events to stdout:
 
 ```
-[analysis] → sending to Claude:    # prompt sent
-[analysis] ← received from Claude: # stop_reason, usage, parsed_output
+[analysis] → sending to Claude:
+[analysis] ← received from Claude:   # stop_reason, usage, raw text preview
 
-[composition] → sending to Claude:
+[composition] → sending to Claude:   # style, totalBeats, voicings count
 [composition] ← received from Claude:
+
+[validation] corrections: N, warnings: M
+[pipeline] validation corrected N note(s)
+
+[ratings] loaded N rating(s) from disk       # on startup
+[ratings] saved: <id> — <song> by <artist> — playability:N musicality:N
 ```
 
 ## Code Style
@@ -132,17 +144,22 @@ The backend logs all Claude API interactions to stdout:
 | `shared/src/types.ts` | TypeScript types inferred from schemas |
 | `backend/src/services/anthropic.ts` | Singleton Anthropic client |
 | `backend/src/services/cache.ts` | Dual in-memory/Redis cache, 1h TTL |
+| `backend/src/services/ratingsStore.ts` | Rating store — persists to `backend/data/ratings.json` on every write, loads on startup |
 | `backend/src/routes/analyse.ts` | POST /api/analyse — analysis-only endpoint |
 | `backend/src/routes/generateTab.ts` | POST /api/generate-tab — full pipeline endpoint |
+| `backend/src/routes/ratings.ts` | POST /api/ratings, GET /api/ratings/:song/:artist |
 | `backend/src/pipeline/analysis.ts` | Step 1 — Claude: key, tempo, capo, chords, strumming, playing guide |
-| `backend/src/pipeline/composition.ts` | Step 2 — Claude: beat groups (simultaneous notes per time slot) |
-| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly from beat groups |
+| `backend/src/pipeline/voicing.ts` | Step 2a — tonal: chord → tones → valid fret positions per string |
+| `backend/src/pipeline/composition.ts` | Step 2b — Claude: beat groups using pre-computed voicing positions |
+| `backend/src/pipeline/validation.ts` | Step 2c — tonal: correct non-chord tones, trim stretches, log jumps |
+| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly from validated beat groups |
 | `backend/src/pipeline/index.ts` | Pipeline orchestrator + per-step caching |
 | `backend/src/tab/renderAsciiTab.ts` | TabModel → ASCII string |
 | `frontend/src/components/ChordForm.tsx` | Input form (song title + artist) |
 | `frontend/src/components/AnalysisDisplay.tsx` | Shows analysis results between the two API phases |
-| `frontend/src/components/TabDisplay.tsx` | ASCII tab output display |
-| `frontend/src/api/client.ts` | Typed API client with Zod validation |
+| `frontend/src/components/TabDisplay.tsx` | ASCII tab output + RatingWidget |
+| `frontend/src/components/RatingWidget.tsx` | Star rating UI (playability + musicality + comment) |
+| `frontend/src/api/client.ts` | Typed API client — analyseTab, generateTab, submitRating |
 
 ## Data Model — Beat Groups
 
@@ -156,6 +173,16 @@ TabModel.beats: BeatGroup[]
 
 Multiple `BeatNote` entries in a single `BeatGroup` are played **simultaneously** (chords, arpeggios). `durationBeats` applies to the whole group. The renderer (`renderAsciiTab.ts`) inserts `|` bar separators based on the `timeSignature` numerator and aligns columns by the widest fret number in each group.
 
+## Dependencies of Note
+
+- `tonal` (backend) — music theory library. Used in `voicing.ts` (chord tone computation) and `validation.ts` (note correction). No API calls — pure computation.
+- `@anthropic-ai/sdk` — Claude API. Used in analysis and composition steps only.
+
 ## Current Status
 
-The pipeline uses real Claude API calls (`claude-opus-4-6` with adaptive thinking) for the analysis and composition steps. Guitarisation is mechanical. Redis is optional — in-memory cache is used by default in local dev.
+- v1.0.0 tagged on `main` — two-phase frontend, beat-group composition model
+- Active development on `feature/v2`:
+  - tonal-powered voicing pre-computation (chord accuracy guaranteed)
+  - tonal-based post-composition validation (instant, auto-corrects wrong frets)
+  - In-app rating system (playability + musicality) for user research
+- Guitarisation is mechanical (no AI). Redis is optional — in-memory cache used by default in local dev.

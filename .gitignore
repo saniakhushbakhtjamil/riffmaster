@@ -6,4 +6,5 @@ dist
 .env.local
 pnpm-lock.yaml
 *.tsbuildinfo
+backend/data/ratings.json
 

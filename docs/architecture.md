@@ -26,11 +26,14 @@ Browser
        │
        └─ Phase 2: api/client.ts generateTab() → POST /api/generate-tab
             └─ routes/generateTab.ts: validateRequest → runGenerateTabPipeline()
-                 ├─ [cache hit]  analysis.ts    → AnalysisResult (from cache)
-                 ├─ [cache miss] composition.ts → Claude API → CompositionResult → cache
+                 ├─ [cache hit]  analysis.ts      → AnalysisResult (from cache)
+                 ├─                voicing.ts      → ChordVoicingInfo[] (~0ms, no cache)
+                 ├─ [cache miss] composition.ts   → Claude API → CompositionResult → cache
+                 ├─                validation.ts   → corrected CompositionResult (~0ms, no cache)
                  ├─ [cache miss] guitarisation.ts → TabModel → cache
                  └─ renderAsciiTab(tab) → GenerateTabResponse
-            └─ TabDisplay renders ASCII tab
+            └─ TabDisplay renders ASCII tab + RatingWidget
+                 └─ [optional] submitRating() → POST /api/ratings
 ```
 
 ---
@@ -53,11 +56,12 @@ Express API server + 3-step AI pipeline.
 
 | Layer | Files | Role |
 |-------|-------|------|
-| HTTP | `app.ts`, `routes/analyse.ts`, `routes/generateTab.ts` | CORS, body parsing, Zod validation, error handling |
-| Pipeline | `pipeline/index.ts` | Orchestrates 3 steps + per-step caching |
+| HTTP | `app.ts`, `routes/analyse.ts`, `routes/generateTab.ts`, `routes/ratings.ts` | CORS, body parsing, Zod validation, error handling |
+| Pipeline | `pipeline/index.ts` | Orchestrates all steps + per-step caching |
 | AI Steps | `pipeline/analysis.ts`, `pipeline/composition.ts` | Claude API calls with structured output |
-| Mechanical Step | `pipeline/guitarisation.ts` | Assembles `TabModel` from composition notes |
-| Services | `services/anthropic.ts`, `services/cache.ts` | Singletons: Anthropic client, cache client |
+| Deterministic Steps | `pipeline/voicing.ts`, `pipeline/validation.ts` | tonal-based chord computation and note correction |
+| Mechanical Step | `pipeline/guitarisation.ts` | Assembles `TabModel` from validated beat groups |
+| Services | `services/anthropic.ts`, `services/cache.ts`, `services/ratingsStore.ts` | Anthropic client, cache, in-memory rating store |
 | Rendering | `tab/renderAsciiTab.ts` | Converts `TabModel` to ASCII string |
 
 ### `@riffmaster/frontend`
@@ -66,11 +70,12 @@ React SPA. No routing — single page with form → result flow.
 
 | Component | Role |
 |-----------|------|
-| `App.tsx` | State management, two-phase loading/error handling |
+| `App.tsx` | State management, two-phase loading/error handling, tracks current song |
 | `ChordForm.tsx` | User input (song title + artist) with client-side validation |
 | `AnalysisDisplay.tsx` | Shows analysis results between phase 1 and phase 2 |
-| `TabDisplay.tsx` | Renders ASCII tab + metadata |
-| `api/client.ts` | Typed fetch wrapper with Zod validation |
+| `TabDisplay.tsx` | Renders ASCII tab + metadata + RatingWidget |
+| `RatingWidget.tsx` | Star ratings (playability + musicality 1–5) + optional comment |
+| `api/client.ts` | Typed fetch wrapper — `analyseTab`, `generateTab`, `submitRating` |
 
 ---
 
@@ -112,19 +117,34 @@ Structured outputs use `client.messages.create()` with a system prompt instructi
 
 ---
 
-### Step 2 — Composition (`pipeline/composition.ts`)
+### Step 2a — Voicing (`pipeline/voicing.ts`)
 
-**Input:** `AnalysisResult` + `GenerateTabRequest`
+**No AI. Pure computation using `tonal`.**
 
-**Prompt asks Claude for:**
-- Guitar notes as **beat groups** — each group is a time slot with one or more simultaneous notes
-- `durationBeats` lives on the group (not individual notes); multiple notes in a group = played simultaneously
-- Sum of all `durationBeats` must equal `totalBeats` (derived from the chord progression)
-- Style guidance: arpeggio = 1–3 notes per beat in a rolling pattern; strumming = 4–6 strings per beat
-- Frets that actually form the chords in standard tuning
-- A pattern name (e.g. "fingerpicked-arpeggio")
+**Input:** `AnalysisResult` (chord progression + capo position)
 
-**String index convention (must match this exactly):**
+For each chord in the progression:
+1. `Chord.get(chord).notes` → pitch classes (e.g. Em7 → `['E','G','B','D']`)
+2. For each of the 6 strings, scan frets 0–4 (relative to capo): compute the sounding note and keep it if it's a chord tone
+3. Returns the full list of valid `{ stringIndex, fret, note }` positions
+
+The result is formatted as a human-readable block and injected directly into the composition prompt — Claude sees exactly which frets are valid for each chord and must only use those.
+
+**Output:** `ChordVoicingInfo[]` (not cached — instant, used as prompt context only)
+
+---
+
+### Step 2b — Composition (`pipeline/composition.ts`)
+
+**Input:** `AnalysisResult` + `GenerateTabRequest` + pre-computed voicings
+
+**What changed from v1:** Claude no longer guesses fret positions. The prompt provides a per-chord table of valid `(stringIndex, fret)` positions and instructs Claude to use only those. Claude's role is purely arrangement — which voicing, what rhythm, how to roll the arpeggio.
+
+**Prompt targets intermediate guitarists** with style-specific guidance:
+- Arpeggio/fingerstyle: thumb on strings 5/4/3, fingers on 2/1/0, roll from bass upward
+- Strumming: bass note on beat 1, strum pattern on remaining beats
+
+**String index convention:**
 
 | stringIndex | String | Physical position |
 |-------------|--------|-------------------|
@@ -140,16 +160,29 @@ Structured outputs use `client.messages.create()` with a system prompt instructi
 {
   patternName: string;
   beats: Array<{
-    durationBeats: number;          // positive — duration of this time slot
-    notes: Array<{
-      stringIndex: number;          // 0–5
-      fret: number;                 // 0–24
-    }>;                             // 1+ notes played simultaneously
+    durationBeats: number;
+    notes: Array<{ stringIndex: number; fret: number }>;
   }>;
 }
 ```
 
 **Cache key:** stringified `AnalysisResult`
+
+---
+
+### Step 2c — Validation (`pipeline/validation.ts`)
+
+**No AI. Instant tonal-based post-processing.**
+
+Runs immediately after composition, before caching. Three checks:
+
+| Check | Action |
+|-------|--------|
+| Note is not a chord tone | Correct to nearest chord tone on same string (scan outward ±1–4 frets); drop if no match found |
+| Stretch within a beat > 4 frets | Remove outlier notes closest to the median fret |
+| Position jump between beats > 5 frets | Log warning — surfaced in `response.warnings[]` |
+
+Correction count and warnings are logged to stdout and any warnings are included in the API response.
 
 ---
 
@@ -162,6 +195,25 @@ Mechanical step — no AI. Wraps beat groups into a `TabModel`.
 - Copies `timeSignature` from the original request if provided
 
 **Cache key:** stringified `CompositionResult`
+
+---
+
+## Rating System
+
+Used for user research — collecting playability and musicality signal on generated tabs.
+
+**Backend:**
+- `services/ratingsStore.ts` — file-backed store. On startup it reads `backend/data/ratings.json` into memory; on every `saveRating()` call it rewrites the file atomically. Survives process restarts. Falls back gracefully if the file is missing or corrupt.
+- `backend/data/ratings.json` — the live data file. Gitignored (user data). The `data/` directory is tracked via `.gitkeep` so it exists on a fresh clone.
+- `POST /api/ratings` — saves a rating (see API reference)
+- `GET /api/ratings/:songTitle/:artistName` — returns all ratings for a song
+
+**Frontend:**
+- `RatingWidget.tsx` renders below the ASCII tab once generation is complete
+- Two independent star selectors (1–5): **Playability** and **Musicality**
+- Optional free-text comment (max 500 chars)
+- On submit → `client.ts` `submitRating()` → `POST /api/ratings`
+- Shows a confirmation message on success; errors surface inline
 
 ---
 
@@ -216,18 +268,28 @@ BeatNote  → { stringIndex, fret }
 
 ## Console Logging
 
-When `ANTHROPIC_API_KEY` is active, the backend logs every Claude interaction:
+When `ANTHROPIC_API_KEY` is active, the backend logs every Claude interaction and pipeline event:
 
 ```
 [analysis] → sending to Claude:
   model: claude-opus-4-6
-  prompt:
-    You are a music theory expert...
-
+  ...
 [analysis] ← received from Claude:
   stop_reason: end_turn
   usage: { input_tokens: 312, output_tokens: 87 }
   parsed_output: { "key": "G major", "capoPosition": 0, ... }
+
+[composition] → sending to Claude:
+  style: arpeggio | totalBeats: 16
+  voicings computed for 4 chords
+[composition] ← received from Claude:
+  patternName: fingerpicked-arpeggio
+  beats count: 32
+
+[validation] corrections: 2, warnings: 0
+[pipeline] validation corrected 2 note(s)
+
+[ratings] saved: 1709384400000-ab3f2c — Wonderwall by Oasis — playability:4 musicality:5
 ```
 
 ---

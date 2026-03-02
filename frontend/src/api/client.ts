@@ -2,9 +2,13 @@ import {
   analysisResultSchema,
   generateTabRequestSchema,
   generateTabResponseSchema,
+  ratingRequestSchema,
+  ratingResponseSchema,
   type AnalysisResult,
   type GenerateTabRequest,
-  type GenerateTabResponse
+  type GenerateTabResponse,
+  type RatingRequest,
+  type RatingResponse,
 } from '@riffmaster/shared';
 
 function getApiBaseUrl(): string {
@@ -50,5 +54,22 @@ export async function generateTab(
 
   const json = await res.json();
   return generateTabResponseSchema.parse(json);
+}
+
+export async function submitRating(payload: RatingRequest): Promise<RatingResponse> {
+  const parsed = ratingRequestSchema.parse(payload);
+
+  const res = await fetch(`${getApiBaseUrl()}/api/ratings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(parsed),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Request failed (${res.status}): ${text}`);
+  }
+
+  return ratingResponseSchema.parse(await res.json());
 }
 

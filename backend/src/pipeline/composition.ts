@@ -1,10 +1,7 @@
 import { compositionResultSchema } from '@riffmaster/shared';
-import type {
-  AnalysisResult,
-  CompositionResult,
-  GenerateTabRequest,
-} from '@riffmaster/shared';
+import type { AnalysisResult, CompositionResult, GenerateTabRequest } from '@riffmaster/shared';
 import { getAnthropicClient } from '../services/anthropic.js';
+import { computeChordVoicings, formatVoicingsForPrompt } from './voicing.js';
 
 export async function runCompositionStep(
   analysis: AnalysisResult,
@@ -12,51 +9,60 @@ export async function runCompositionStep(
 ): Promise<CompositionResult> {
   const client = getAnthropicClient();
 
-  const chordList = analysis.chordProgression
-    .map((c) => `${c.chord} (${c.beats} beats)`)
-    .join(', ');
-
+  const voicings = computeChordVoicings(analysis);
+  const voicingBlock = formatVoicingsForPrompt(voicings);
   const totalBeats = analysis.chordProgression.reduce((sum, c) => sum + c.beats, 0);
   const style = req.style ?? 'arpeggio';
 
-  const prompt = `You are a guitar tab composer. Compose a guitar part for the following song.
+  const prompt = `You are a guitar arranger for intermediate guitarists. Compose a guitar part that is musical and playable.
 
 Song: "${req.songTitle}" by ${req.artistName}
 Key: ${analysis.key}
 Capo: ${analysis.capoPosition}
 Tempo: ${analysis.tempo} BPM
-Chord progression: ${chordList}
-Total beats to fill: ${totalBeats}
 Style: ${style}
-${req.difficulty ? `Difficulty: ${req.difficulty}` : 'Difficulty: beginner'}
+${req.difficulty ? `Difficulty: ${req.difficulty}` : 'Difficulty: intermediate'}
+Total beats to fill: ${totalBeats}
 
-String index mapping (CRITICAL — use exactly these numbers):
-- stringIndex 5 = low E string (6th string, thickest)
-- stringIndex 4 = A string (5th string)
-- stringIndex 3 = D string (4th string)
-- stringIndex 2 = G string (3rd string)
-- stringIndex 1 = B string (2nd string)
-- stringIndex 0 = high e string (1st string, thinnest)
+--- CHORD VOICINGS (pre-computed, accurate) ---
+CRITICAL: You MUST only use the (stringIndex, fret) pairs listed below. Do not invent other frets.
 
-OUTPUT FORMAT — beat groups:
-Each element in "beats" is a time slot. Multiple notes in one slot are played simultaneously.
-- durationBeats goes on the GROUP (not on individual notes)
-- Use 1 for quarter notes, 0.5 for eighth notes
-- The sum of all durationBeats must equal ${totalBeats}
-- Choose frets that form the correct chords in standard tuning
+${voicingBlock}
 
-Style guidance:
-- arpeggio / fingerstyle: 1–3 notes per beat in a rolling pattern across strings
-- strumming: 4–6 strings per beat struck simultaneously
+--- STRING INDEX REFERENCE ---
+stringIndex 5 = low E (6th string, thickest)
+stringIndex 4 = A (5th string)
+stringIndex 3 = D (4th string)
+stringIndex 2 = G (3rd string)
+stringIndex 1 = B (2nd string)
+stringIndex 0 = high e (1st string, thinnest)
 
-patternName: a short descriptive name (e.g. "fingerpicked-arpeggio", "folk-strum")
+--- OUTPUT FORMAT ---
+Return beat groups. Each group is one time slot — multiple notes in a group are played simultaneously.
+- durationBeats is on the group (1 = quarter note, 0.5 = eighth note)
+- Sum of all durationBeats must equal ${totalBeats}
+- Spend each chord's beats on notes from that chord's voicing only
 
-Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation:
+--- STYLE GUIDANCE ---
+${
+  style === 'strumming'
+    ? `Strumming: use 4–6 strings per beat struck simultaneously.
+Bass note (string 5 or 4) on beat 1 of each chord.
+Alternate bass/chord pattern for variety (e.g. bass on 1, strum on 2-3-4).`
+    : `Arpeggio/fingerstyle: roll 1–3 notes per beat across strings in a repeating pattern.
+Thumb (strings 5, 4, 3) for bass notes, fingers (strings 2, 1, 0) for melody.
+Start each chord with its bass note, then roll upward through chord tones.
+Vary the pattern slightly every 4 beats to keep it musical.`
+}
+
+patternName: a short descriptive name (e.g. "travis-pick", "folk-strum", "fingerpicked-arpeggio")
+
+Respond with ONLY a valid JSON object — no markdown, no code fences:
 {
   "patternName": "<short pattern name>",
   "beats": [
     { "durationBeats": 1, "notes": [{ "stringIndex": 5, "fret": 0 }] },
-    { "durationBeats": 1, "notes": [{ "stringIndex": 3, "fret": 2 }, { "stringIndex": 2, "fret": 0 }] }
+    { "durationBeats": 1, "notes": [{ "stringIndex": 3, "fret": 0 }, { "stringIndex": 2, "fret": 0 }] }
   ]
 }`;
 
@@ -69,7 +75,8 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
 
   console.log('\n[composition] → sending to Claude:');
   console.log('  model:', params.model);
-  console.log('  prompt:\n' + prompt.split('\n').map((l) => '    ' + l).join('\n'));
+  console.log('  style:', style, '| totalBeats:', totalBeats);
+  console.log('  voicings computed for', voicings.length, 'chords');
 
   const response = await client.messages.create(params);
 

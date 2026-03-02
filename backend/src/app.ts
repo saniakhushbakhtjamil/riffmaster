@@ -3,6 +3,7 @@ import cors from 'cors';
 
 import { analyseRouter } from './routes/analyse.js';
 import { generateTabRouter } from './routes/generateTab.js';
+import { ratingsRouter } from './routes/ratings.js';
 
 export function createApp() {
   const app = express();
@@ -16,6 +17,7 @@ export function createApp() {
 
   app.use('/api', analyseRouter());
   app.use('/api', generateTabRouter());
+  app.use('/api', ratingsRouter());
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
