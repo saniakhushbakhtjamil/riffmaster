@@ -16,6 +16,9 @@ export async function runCompositionStep(
     .map((c) => `${c.chord} (${c.beats} beats)`)
     .join(', ');
 
+  const totalBeats = analysis.chordProgression.reduce((sum, c) => sum + c.beats, 0);
+  const style = req.style ?? 'arpeggio';
+
   const prompt = `You are a guitar tab composer. Compose a guitar part for the following song.
 
 Song: "${req.songTitle}" by ${req.artistName}
@@ -23,7 +26,8 @@ Key: ${analysis.key}
 Capo: ${analysis.capoPosition}
 Tempo: ${analysis.tempo} BPM
 Chord progression: ${chordList}
-${req.style ? `Style: ${req.style}` : 'Style: arpeggio'}
+Total beats to fill: ${totalBeats}
+Style: ${style}
 ${req.difficulty ? `Difficulty: ${req.difficulty}` : 'Difficulty: beginner'}
 
 String index mapping (CRITICAL — use exactly these numbers):
@@ -34,19 +38,25 @@ String index mapping (CRITICAL — use exactly these numbers):
 - stringIndex 1 = B string (2nd string)
 - stringIndex 0 = high e string (1st string, thinnest)
 
-Rules:
-- fret must be 0–24
-- durationBeats must be positive (use 1 for quarter notes, 0.5 for eighth notes)
-- Generate one note per beat across the full chord progression
-- Choose frets that actually form the given chords in standard tuning
-- patternName: a short descriptive name for the pattern (e.g. "fingerpicked-arpeggio")
+OUTPUT FORMAT — beat groups:
+Each element in "beats" is a time slot. Multiple notes in one slot are played simultaneously.
+- durationBeats goes on the GROUP (not on individual notes)
+- Use 1 for quarter notes, 0.5 for eighth notes
+- The sum of all durationBeats must equal ${totalBeats}
+- Choose frets that form the correct chords in standard tuning
 
-Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. The JSON must match exactly:
+Style guidance:
+- arpeggio / fingerstyle: 1–3 notes per beat in a rolling pattern across strings
+- strumming: 4–6 strings per beat struck simultaneously
+
+patternName: a short descriptive name (e.g. "fingerpicked-arpeggio", "folk-strum")
+
+Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation:
 {
   "patternName": "<short pattern name>",
-  "notes": [
-    { "stringIndex": <0-5>, "fret": <0-24>, "durationBeats": <positive number> },
-    ...one note per beat
+  "beats": [
+    { "durationBeats": 1, "notes": [{ "stringIndex": 5, "fret": 0 }] },
+    { "durationBeats": 1, "notes": [{ "stringIndex": 3, "fret": 2 }, { "stringIndex": 2, "fret": 0 }] }
   ]
 }`;
 
@@ -77,7 +87,7 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
   const result = compositionResultSchema.parse(raw);
 
   console.log('  patternName:', result.patternName);
-  console.log('  notes count:', result.notes.length);
+  console.log('  beats count:', result.beats.length);
 
   return result;
 }

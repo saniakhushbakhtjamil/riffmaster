@@ -117,8 +117,10 @@ Structured outputs use `client.messages.create()` with a system prompt instructi
 **Input:** `AnalysisResult` + `GenerateTabRequest`
 
 **Prompt asks Claude for:**
-- Guitar notes across the full chord progression
-- One note per beat (or 0.5 for eighth notes)
+- Guitar notes as **beat groups** — each group is a time slot with one or more simultaneous notes
+- `durationBeats` lives on the group (not individual notes); multiple notes in a group = played simultaneously
+- Sum of all `durationBeats` must equal `totalBeats` (derived from the chord progression)
+- Style guidance: arpeggio = 1–3 notes per beat in a rolling pattern; strumming = 4–6 strings per beat
 - Frets that actually form the chords in standard tuning
 - A pattern name (e.g. "fingerpicked-arpeggio")
 
@@ -137,10 +139,12 @@ Structured outputs use `client.messages.create()` with a system prompt instructi
 ```typescript
 {
   patternName: string;
-  notes: Array<{
-    stringIndex: number; // 0–5
-    fret: number;        // 0–24
-    durationBeats: number; // positive
+  beats: Array<{
+    durationBeats: number;          // positive — duration of this time slot
+    notes: Array<{
+      stringIndex: number;          // 0–5
+      fret: number;                 // 0–24
+    }>;                             // 1+ notes played simultaneously
   }>;
 }
 ```
@@ -151,7 +155,7 @@ Structured outputs use `client.messages.create()` with a system prompt instructi
 
 ### Step 3 — Guitarisation (`pipeline/guitarisation.ts`)
 
-Mechanical step — no AI. Wraps notes into a `TabModel`.
+Mechanical step — no AI. Wraps beat groups into a `TabModel`.
 
 - Sets tuning to standard: `['E', 'A', 'D', 'G', 'B', 'E']`
 - Uses `tempo` from `AnalysisResult` (not from the original request)
@@ -203,8 +207,9 @@ AnalysisResult    → Step 1 output
 CompositionResult → Step 2 output
 GuitarisationResult → Step 3 output (contains TabModel)
 
-TabModel → { tuning[6], tempo, notes: TabNote[] }
-TabNote  → { stringIndex, fret, durationBeats }
+TabModel → { tuning[6], tempo, timeSignature?, beats: BeatGroup[] }
+BeatGroup → { durationBeats, notes: BeatNote[] }
+BeatNote  → { stringIndex, fret }
 ```
 
 ---

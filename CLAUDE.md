@@ -61,14 +61,14 @@ pnpm build
 ### Shared Package (`shared/src/`)
 Single source of truth for request/response contracts. All Zod schemas live in `schemas.ts`; TypeScript types are inferred from them in `types.ts`. Both backend and frontend import from `@riffmaster/shared`.
 
-Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `AnalysisResult`, `CompositionResult`, `GuitarisationResult`.
+Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `BeatGroup`, `BeatNote`, `AnalysisResult`, `CompositionResult`, `GuitarisationResult`.
 
 ### Backend Pipeline (`backend/src/pipeline/`)
 `POST /api/generate-tab` → `runGenerateTabPipeline()` → three sequential steps:
 
 1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, tempo (BPM), chord progression, strumming pattern, and playing guide for the song
-2. **composition.ts** — calls `claude-opus-4-6` with adaptive thinking; returns guitar notes (stringIndex, fret, durationBeats) based on the analysis
-3. **guitarisation.ts** — mechanical wrapper: packages notes into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo from the analysis result
+2. **composition.ts** — calls `claude-opus-4-6` with adaptive thinking; returns **beat groups** (`{ durationBeats, notes: [{ stringIndex, fret }] }`) — multiple notes in one group are played simultaneously
+3. **guitarisation.ts** — mechanical wrapper: packages beat groups into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo from the analysis result
 
 Each step's result is independently cached (1-hour TTL) by `services/cache.ts`, which transparently uses Redis (`REDIS_URL` env) or falls back to an in-memory Map.
 
@@ -135,14 +135,26 @@ The backend logs all Claude API interactions to stdout:
 | `backend/src/routes/analyse.ts` | POST /api/analyse — analysis-only endpoint |
 | `backend/src/routes/generateTab.ts` | POST /api/generate-tab — full pipeline endpoint |
 | `backend/src/pipeline/analysis.ts` | Step 1 — Claude: key, tempo, capo, chords, strumming, playing guide |
-| `backend/src/pipeline/composition.ts` | Step 2 — Claude: guitar notes |
-| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly |
+| `backend/src/pipeline/composition.ts` | Step 2 — Claude: beat groups (simultaneous notes per time slot) |
+| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly from beat groups |
 | `backend/src/pipeline/index.ts` | Pipeline orchestrator + per-step caching |
 | `backend/src/tab/renderAsciiTab.ts` | TabModel → ASCII string |
 | `frontend/src/components/ChordForm.tsx` | Input form (song title + artist) |
 | `frontend/src/components/AnalysisDisplay.tsx` | Shows analysis results between the two API phases |
 | `frontend/src/components/TabDisplay.tsx` | ASCII tab output display |
 | `frontend/src/api/client.ts` | Typed API client with Zod validation |
+
+## Data Model — Beat Groups
+
+The composition and tab model use a **beat-group** structure rather than a flat note list:
+
+```
+TabModel.beats: BeatGroup[]
+  BeatGroup { durationBeats: number; notes: BeatNote[] }
+  BeatNote  { stringIndex: number; fret: number }
+```
+
+Multiple `BeatNote` entries in a single `BeatGroup` are played **simultaneously** (chords, arpeggios). `durationBeats` applies to the whole group. The renderer (`renderAsciiTab.ts`) inserts `|` bar separators based on the `timeSignature` numerator and aligns columns by the widest fret number in each group.
 
 ## Current Status
 

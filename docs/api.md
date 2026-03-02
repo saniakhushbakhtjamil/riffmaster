@@ -107,15 +107,17 @@ Runs the full 3-step AI pipeline and returns an ASCII guitar tab.
 ```typescript
 {
   tab: {
-    ascii: string;      // Rendered ASCII tab (6 lines, one per string)
+    ascii: string;      // Rendered ASCII tab (6 lines, one per string, with bar separators)
     model: {
       tuning: [string, string, string, string, string, string]; // e.g. ["E","A","D","G","B","E"]
       tempo: number;
       timeSignature?: string;
-      notes: Array<{
-        stringIndex: number;    // 0 = high e, 5 = low E
-        fret: number;           // 0–24
-        durationBeats: number;  // positive, e.g. 1.0 or 0.5
+      beats: Array<{
+        durationBeats: number;       // duration of this time slot (positive)
+        notes: Array<{
+          stringIndex: number;       // 0 = high e, 5 = low E
+          fret: number;              // 0–24
+        }>;                          // multiple notes = played simultaneously
       }>;
     };
   };
@@ -151,7 +153,10 @@ Runs the full 3-step AI pipeline and returns an ASCII guitar tab.
       durationMs: number;
       output: {
         patternName: string;
-        notes: Array<{ stringIndex: number; fret: number; durationBeats: number }>;
+        beats: Array<{
+          durationBeats: number;
+          notes: Array<{ stringIndex: number; fret: number }>;
+        }>;
       };
     };
     guitarisation: {
@@ -159,7 +164,15 @@ Runs the full 3-step AI pipeline and returns an ASCII guitar tab.
       fromCache: boolean;
       durationMs: number;
       output: {
-        tab: { tuning: string[]; tempo: number; notes: TabNote[] };
+        tab: {
+          tuning: string[];
+          tempo: number;
+          timeSignature?: string;
+          beats: Array<{
+            durationBeats: number;
+            notes: Array<{ stringIndex: number; fret: number }>;
+          }>;
+        };
       };
     };
   };
@@ -175,9 +188,10 @@ Runs the full 3-step AI pipeline and returns an ASCII guitar tab.
     "model": {
       "tuning": ["E", "A", "D", "G", "B", "E"],
       "tempo": 87,
-      "notes": [
-        { "stringIndex": 1, "fret": 0, "durationBeats": 1 },
-        { "stringIndex": 2, "fret": 0, "durationBeats": 1 }
+      "timeSignature": "4/4",
+      "beats": [
+        { "durationBeats": 1, "notes": [{ "stringIndex": 5, "fret": 0 }] },
+        { "durationBeats": 1, "notes": [{ "stringIndex": 3, "fret": 2 }, { "stringIndex": 2, "fret": 0 }] }
       ]
     }
   },
