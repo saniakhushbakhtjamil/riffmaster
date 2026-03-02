@@ -11,6 +11,7 @@ export function App() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [asciiTab, setAsciiTab] = useState<string | null>(null);
   const [tabModel, setTabModel] = useState<TabModel | null>(null);
+  const [currentSong, setCurrentSong] = useState<{ title: string; artist: string } | null>(null);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export function App() {
       setAnalysis(null);
       setAsciiTab(null);
       setTabModel(null);
+      setCurrentSong({ title: payload.songTitle, artist: payload.artistName });
 
       // Phase 1: analyse
       setIsAnalysing(true);
@@ -51,6 +53,8 @@ export function App() {
           model={tabModel}
           isLoading={isComposing}
           error={error}
+          songTitle={currentSong?.title}
+          artistName={currentSong?.artist}
         />
       </main>
     </div>

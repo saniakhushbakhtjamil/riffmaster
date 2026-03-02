@@ -10,6 +10,8 @@ import type {
   guitarisationResultSchema,
   guitarisationStepInfoSchema,
   pipelineStepNameSchema,
+  ratingRequestSchema,
+  ratingResponseSchema,
   tabModelSchema,
   chordBeatSchema
 } from './schemas';
@@ -33,4 +35,7 @@ export type GuitarisationStepInfo = z.infer<typeof guitarisationStepInfoSchema>;
 
 export type GenerateTabRequest = z.infer<typeof generateTabRequestSchema>;
 export type GenerateTabResponse = z.infer<typeof generateTabResponseSchema>;
+
+export type RatingRequest = z.infer<typeof ratingRequestSchema>;
+export type RatingResponse = z.infer<typeof ratingResponseSchema>;
 
