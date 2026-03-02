@@ -66,13 +66,19 @@ Key types: `GenerateTabRequest`, `GenerateTabResponse`, `TabModel`, `AnalysisRes
 ### Backend Pipeline (`backend/src/pipeline/`)
 `POST /api/generate-tab` → `runGenerateTabPipeline()` → three sequential steps:
 
-1. **analysis.ts** — deterministically selects a chord progression from hardcoded templates using a hash of the request inputs
-2. **composition.ts** — generates notes using a basic arpeggio pattern over the chord progression
-3. **guitarisation.ts** — wraps notes with standard tuning (E-A-D-G-B-E) and tempo
+1. **analysis.ts** — calls `claude-opus-4-6` with adaptive thinking; returns key, capo position, and chord progression for the song
+2. **composition.ts** — calls `claude-opus-4-6` with adaptive thinking; returns guitar notes (stringIndex, fret, durationBeats) based on the analysis
+3. **guitarisation.ts** — mechanical wrapper: packages notes into a `TabModel` with standard tuning (E-A-D-G-B-E) and tempo
 
 Each step's result is independently cached (1-hour TTL) by `services/cache.ts`, which transparently uses Redis (`REDIS_URL` env) or falls back to an in-memory Map.
 
 ASCII rendering is a separate utility: `tab/renderAsciiTab.ts`.
+
+### Anthropic Client (`backend/src/services/anthropic.ts`)
+Singleton factory — creates one `Anthropic` instance per process. Throws clearly if `ANTHROPIC_API_KEY` is missing.
+
+### Structured Outputs
+Both AI steps use `client.messages.parse()` with `zodOutputFormat(schema)` from `@anthropic-ai/sdk/helpers/zod`. This guarantees Claude's response is valid JSON matching the Zod schema. `parsed_output` is validated at runtime; a null result throws an error.
 
 ### Backend Entry (`backend/src/`)
 - `index.ts` — loads `.env`, starts server
@@ -86,14 +92,26 @@ ASCII rendering is a separate utility: `tab/renderAsciiTab.ts`.
 
 ## Environment Variables
 
-**Backend** (copy `backend/.env.example` → `backend/.env`):
+**Backend** (`backend/.env`):
 - `PORT` — default `4000`
-- `REDIS_URL` — if absent, in-memory cache is used
+- `REDIS_URL` — if absent or commented out, in-memory cache is used (Redis not required for local dev)
 - `ALLOWED_ORIGIN` — CORS origin, default `*`
-- `ANTHROPIC_API_KEY` — loaded but not yet used (pipeline is currently mocked)
+- `ANTHROPIC_API_KEY` — **required** — used by analysis and composition pipeline steps
 
-**Frontend** (copy `frontend/.env.example` → `frontend/.env`):
+**Frontend** (`frontend/.env`):
 - `VITE_API_BASE_URL` — base URL for API; empty string means relative (works with Vite proxy in dev)
+
+## Console Logging
+
+The backend logs all Claude API interactions to stdout:
+
+```
+[analysis] → sending to Claude:    # prompt sent
+[analysis] ← received from Claude: # stop_reason, usage, parsed_output
+
+[composition] → sending to Claude:
+[composition] ← received from Claude:
+```
 
 ## Code Style
 
@@ -101,6 +119,23 @@ ASCII rendering is a separate utility: `tab/renderAsciiTab.ts`.
 - **ESLint**: TypeScript strict + stylistic, React hooks rules enforced
 - `dist/` and `node_modules/` are excluded from linting
 
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `shared/src/schemas.ts` | All Zod schemas (single source of truth) |
+| `shared/src/types.ts` | TypeScript types inferred from schemas |
+| `backend/src/services/anthropic.ts` | Singleton Anthropic client |
+| `backend/src/services/cache.ts` | Dual in-memory/Redis cache, 1h TTL |
+| `backend/src/pipeline/analysis.ts` | Step 1 — Claude: key, capo, chord progression |
+| `backend/src/pipeline/composition.ts` | Step 2 — Claude: guitar notes |
+| `backend/src/pipeline/guitarisation.ts` | Step 3 — mechanical: TabModel assembly |
+| `backend/src/pipeline/index.ts` | Pipeline orchestrator + per-step caching |
+| `backend/src/tab/renderAsciiTab.ts` | TabModel → ASCII string |
+| `frontend/src/components/ChordForm.tsx` | Input form |
+| `frontend/src/components/TabDisplay.tsx` | ASCII tab output display |
+| `frontend/src/api/client.ts` | Typed API client with Zod validation |
+
 ## Current Status
 
-The pipeline is fully mocked — no real AI calls are made. The `ANTHROPIC_API_KEY` is a placeholder for future integration. The architecture in `pipeline/` is designed so each step can be swapped for an AI-backed implementation independently.
+The pipeline uses real Claude API calls (`claude-opus-4-6` with adaptive thinking) for the analysis and composition steps. Guitarisation is mechanical. Redis is optional — in-memory cache is used by default in local dev.

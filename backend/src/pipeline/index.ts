@@ -47,7 +47,7 @@ export async function runGenerateTabPipeline(
     composition = JSON.parse(cachedComposition) as CompositionResult;
     compositionFromCache = true;
   } else {
-    composition = await runCompositionStep(analysis);
+    composition = await runCompositionStep(analysis, req);
     await cache.set(compositionKey, JSON.stringify(composition), 60 * 60);
   }
   timings.composition = Date.now() - compositionStart;
