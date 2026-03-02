@@ -1,6 +1,6 @@
 import { Note } from 'tonal';
 import type { AnalysisResult, BeatGroup, CompositionResult } from '@riffmaster/shared';
-import { computeChordVoicings } from './voicing.js';
+import { computeChordVoicings, computeScalePositions } from './voicing.js';
 
 const STRING_OPEN_MIDI: Record<number, number> = {
   0: 64,
@@ -26,65 +26,70 @@ export function validateAndCorrect(
   analysis: AnalysisResult,
 ): ValidationResult {
   const voicings = computeChordVoicings(analysis);
+  const scale = computeScalePositions(analysis);
+  const scaleTones = new Set(scale.tones);
   const warnings: string[] = [];
   let corrections = 0;
 
   // Build chord timeline: for each beat group determine active chord tones
   const chordTimeline: string[][] = [];
-  let beatCursor = 0;
   let chordIdx = 0;
   let chordBeatUsed = 0;
 
   for (const group of composition.beats) {
-    // Advance chord index if current chord's beats are exhausted
     while (chordIdx < voicings.length - 1 && chordBeatUsed >= voicings[chordIdx].beats) {
       chordIdx++;
       chordBeatUsed = 0;
     }
     chordTimeline.push(voicings[chordIdx].tones);
     chordBeatUsed += group.durationBeats;
-    beatCursor += group.durationBeats;
   }
 
   const correctedBeats: BeatGroup[] = composition.beats.map((group, i) => {
-    const activeTones = chordTimeline[i];
+    const chordTones = chordTimeline[i];
     const capo = analysis.capoPosition;
 
-    // 1. Correct notes that aren't chord tones
-    let correctedNotes = group.notes.map((note) => {
-      const pc = pitchClassAt(note.stringIndex, note.fret, capo);
-      if (activeTones.includes(pc)) return note;
+    // A note is valid if it's a chord tone OR a scale tone
+    const correctedNotes = group.notes.map((note) => {
+      // Fret must be in valid range
+      if (note.fret < 0 || note.fret > 24) {
+        corrections++;
+        return null;
+      }
 
-      // Search outward from current fret on the same string
-      for (let offset = 1; offset <= 4; offset++) {
+      const pc = pitchClassAt(note.stringIndex, note.fret, capo);
+
+      // Accept chord tones and scale tones — only reject truly out-of-key notes
+      if (chordTones.includes(pc) || scaleTones.has(pc)) return note;
+
+      // Note is outside the scale — find nearest scale tone on same string
+      for (let offset = 1; offset <= 3; offset++) {
         for (const delta of [offset, -offset]) {
           const newFret = note.fret + delta;
-          if (newFret < 0 || newFret > 4) continue;
+          if (newFret < 0 || newFret > 12) continue;
           const newPc = pitchClassAt(note.stringIndex, newFret, capo);
-          if (activeTones.includes(newPc)) {
+          if (scaleTones.has(newPc)) {
             corrections++;
             return { ...note, fret: newFret };
           }
         }
       }
 
-      // No correction found on this string — drop the note
+      // Can't correct — drop the note
       corrections++;
       return null;
     });
 
-    // Filter out dropped notes; ensure at least one note remains
     const validNotes = correctedNotes.filter((n): n is NonNullable<typeof n> => n !== null);
     const finalNotes = validNotes.length > 0 ? validNotes : group.notes.slice(0, 1);
 
-    // 2. Check stretch within the beat (max fret spread)
+    // Check stretch within beat (allow up to 5 frets for riffs — wider than chord voicings)
     const frets = finalNotes.map((n) => n.fret);
     const stretch = Math.max(...frets) - Math.min(...frets);
-    if (stretch > 4) {
-      // Keep notes closest to the median fret
+    if (stretch > 5) {
       const sorted = [...frets].sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)];
-      const clamped = finalNotes.filter((n) => Math.abs(n.fret - median) <= 2);
+      const clamped = finalNotes.filter((n) => Math.abs(n.fret - median) <= 3);
       if (clamped.length > 0) {
         corrections++;
         warnings.push(`Beat ${i}: stretch ${stretch} reduced`);
@@ -95,14 +100,15 @@ export function validateAndCorrect(
     return { ...group, notes: finalNotes };
   });
 
-  // 3. Check position jumps between consecutive beat groups
+  // Check position jumps between consecutive beat groups
   for (let i = 1; i < correctedBeats.length; i++) {
     const prevAvg =
       correctedBeats[i - 1].notes.reduce((s, n) => s + n.fret, 0) /
       correctedBeats[i - 1].notes.length;
     const currAvg =
       correctedBeats[i].notes.reduce((s, n) => s + n.fret, 0) / correctedBeats[i].notes.length;
-    if (Math.abs(currAvg - prevAvg) > 5) {
+    // Allow larger jumps now that riffs can traverse the neck
+    if (Math.abs(currAvg - prevAvg) > 7) {
       warnings.push(`Beat ${i}: position jump of ${Math.abs(currAvg - prevAvg).toFixed(1)} frets`);
     }
   }
