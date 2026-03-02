@@ -9,7 +9,9 @@ export const analysisResultSchema = z.object({
   key: z.string().min(1),
   capoPosition: z.number().int().min(0).max(12),
   tempo: z.number().int().min(40).max(240),
-  chordProgression: z.array(chordBeatSchema).min(1)
+  chordProgression: z.array(chordBeatSchema).min(1),
+  strummingPattern: z.string().min(1),
+  playingGuide: z.string().min(1),
 });
 
 export const tabNoteSchema = z.object({

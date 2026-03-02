@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 
+import { analyseRouter } from './routes/analyse.js';
 import { generateTabRouter } from './routes/generateTab.js';
 
 export function createApp() {
@@ -13,6 +14,7 @@ export function createApp() {
   );
   app.use(express.json());
 
+  app.use('/api', analyseRouter());
   app.use('/api', generateTabRouter());
 
   app.get('/health', (_req, res) => {

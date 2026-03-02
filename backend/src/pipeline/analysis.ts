@@ -19,7 +19,9 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no explan
   "chordProgression": [
     { "chord": "<chord name>", "beats": <integer, typically 2 or 4> },
     ...4 to 8 chords total
-  ]
+  ],
+  "strummingPattern": "<strumming pattern notation, e.g. D-DU-UDU or description like 'down on beats 1 and 3, up on 2 and 4'>",
+  "playingGuide": "<2-3 sentences of practical advice for a beginner on how to play this song: hand position, chord transitions, timing tips>"
 }`;
 
   const params = {
