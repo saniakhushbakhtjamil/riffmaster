@@ -1,7 +1,12 @@
 import { compositionResultSchema } from '@riffmaster/shared';
 import type { AnalysisResult, CompositionResult, GenerateTabRequest } from '@riffmaster/shared';
 import { getAnthropicClient } from '../services/anthropic.js';
-import { computeChordVoicings, formatVoicingsForPrompt } from './voicing.js';
+import {
+  computeChordVoicings,
+  computeScalePositions,
+  formatVoicingsForPrompt,
+  formatScaleForPrompt,
+} from './voicing.js';
 
 export async function runCompositionStep(
   analysis: AnalysisResult,
@@ -10,11 +15,13 @@ export async function runCompositionStep(
   const client = getAnthropicClient();
 
   const voicings = computeChordVoicings(analysis);
+  const scale = computeScalePositions(analysis);
   const voicingBlock = formatVoicingsForPrompt(voicings);
+  const scaleBlock = formatScaleForPrompt(scale);
   const totalBeats = analysis.chordProgression.reduce((sum, c) => sum + c.beats, 0);
   const style = req.style ?? 'arpeggio';
 
-  const prompt = `You are a guitar arranger for intermediate guitarists. Compose a guitar part that is musical and playable.
+  const prompt = `You are a creative guitar arranger writing for an intermediate guitarist. Compose an expressive, musical guitar part — not just chord arpeggios, but real guitar playing with riffs, licks, and fills.
 
 Song: "${req.songTitle}" by ${req.artistName}
 Key: ${analysis.key}
@@ -23,11 +30,7 @@ Tempo: ${analysis.tempo} BPM
 Style: ${style}
 ${req.difficulty ? `Difficulty: ${req.difficulty}` : 'Difficulty: intermediate'}
 Total beats to fill: ${totalBeats}
-
---- CHORD VOICINGS (pre-computed, accurate) ---
-CRITICAL: You MUST only use the (stringIndex, fret) pairs listed below. Do not invent other frets.
-
-${voicingBlock}
+Playing guide: ${analysis.playingGuide}
 
 --- STRING INDEX REFERENCE ---
 stringIndex 5 = low E (6th string, thickest)
@@ -37,38 +40,54 @@ stringIndex 2 = G (3rd string)
 stringIndex 1 = B (2nd string)
 stringIndex 0 = high e (1st string, thinnest)
 
---- OUTPUT FORMAT ---
-Return beat groups. Each group is one time slot — multiple notes in a group are played simultaneously.
-- durationBeats is on the group (1 = quarter note, 0.5 = eighth note)
-- Sum of all durationBeats must equal ${totalBeats}
-- Spend each chord's beats on notes from that chord's voicing only
+--- HARMONIC LAYER: chord voicings (frets 0–4) ---
+Use these on beat 1 of each chord and for strummed/arpeggiated moments.
 
---- STYLE GUIDANCE ---
+${voicingBlock}
+
+--- MELODIC LAYER: scale positions (frets 0–12) ---
+Use these freely for riffs, licks, fills, and single-note runs.
+
+${scaleBlock}
+
+--- HOW TO MIX THE TWO LAYERS ---
+Think of the tab in two parts:
+
+1. CHORD BEATS — anchor beat 1 of each chord with a bass note or chord tone from the harmonic layer. Use arpeggios or strums from the voicing positions.
+
+2. MELODIC BEATS — use the remaining beats creatively:
+   - RIFF: a repeated single-note motif that drives the song forward (use scale positions, can go up to fret 12)
+   - LICK: a short melodic phrase (3–6 notes) that decorates a chord change — fast, expressive
+   - FILL: a run or phrase that bridges two chords, often descending or ascending the scale
+   - Vary fret positions — don't stay at frets 0–4 the whole time
+
 ${
   style === 'strumming'
-    ? `Strumming: use 4–6 strings per beat struck simultaneously.
-Bass note (string 5 or 4) on beat 1 of each chord.
-Alternate bass/chord pattern for variety (e.g. bass on 1, strum on 2-3-4).`
-    : `Arpeggio/fingerstyle: roll 1–3 notes per beat across strings in a repeating pattern.
-Thumb (strings 5, 4, 3) for bass notes, fingers (strings 2, 1, 0) for melody.
-Start each chord with its bass note, then roll upward through chord tones.
-Vary the pattern slightly every 4 beats to keep it musical.`
+    ? `STRUMMING STYLE: strum chords on main beats, then add single-note fills on the off-beats or before chord changes.`
+    : `FINGERPICKING STYLE: alternate bass notes (strings 5, 4) with melodic runs on treble strings (2, 1, 0). Insert licks and riffs on the upper strings between chord changes.`
 }
 
-patternName: a short descriptive name (e.g. "travis-pick", "folk-strum", "fingerpicked-arpeggio")
+--- OUTPUT FORMAT ---
+Beat groups — each group is one time slot. Multiple notes = played simultaneously.
+- durationBeats on the group (1 = quarter note, 0.5 = eighth note, 0.25 = sixteenth)
+- Sum of all durationBeats must equal ${totalBeats}
+- Shorter note values (0.5, 0.25) make riffs feel fast and expressive
+
+patternName: describe what you composed (e.g. "pentatonic-riff-with-arpeggio", "fingerpick-and-lick")
 
 Respond with ONLY a valid JSON object — no markdown, no code fences:
 {
   "patternName": "<short pattern name>",
   "beats": [
     { "durationBeats": 1, "notes": [{ "stringIndex": 5, "fret": 0 }] },
-    { "durationBeats": 1, "notes": [{ "stringIndex": 3, "fret": 0 }, { "stringIndex": 2, "fret": 0 }] }
+    { "durationBeats": 0.5, "notes": [{ "stringIndex": 2, "fret": 7 }] },
+    { "durationBeats": 0.5, "notes": [{ "stringIndex": 1, "fret": 8 }] }
   ]
 }`;
 
   const params = {
     model: 'claude-opus-4-6',
-    max_tokens: 8192,
+    max_tokens: 16000,
     thinking: { type: 'adaptive' as const },
     messages: [{ role: 'user' as const, content: prompt }],
   };
@@ -76,6 +95,7 @@ Respond with ONLY a valid JSON object — no markdown, no code fences:
   console.log('\n[composition] → sending to Claude:');
   console.log('  model:', params.model);
   console.log('  style:', style, '| totalBeats:', totalBeats);
+  console.log('  scale:', scale.scaleName, '| tones:', scale.tones.join(' '));
   console.log('  voicings computed for', voicings.length, 'chords');
 
   const response = await client.messages.create(params);
