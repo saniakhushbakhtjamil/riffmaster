@@ -1,4 +1,3 @@
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { compositionResultSchema } from '@riffmaster/shared';
 import type {
   AnalysisResult,
@@ -40,29 +39,45 @@ Rules:
 - durationBeats must be positive (use 1 for quarter notes, 0.5 for eighth notes)
 - Generate one note per beat across the full chord progression
 - Choose frets that actually form the given chords in standard tuning
-- patternName: a short descriptive name for the pattern (e.g. "fingerpicked-arpeggio")`;
+- patternName: a short descriptive name for the pattern (e.g. "fingerpicked-arpeggio")
+
+Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. The JSON must match exactly:
+{
+  "patternName": "<short pattern name>",
+  "notes": [
+    { "stringIndex": <0-5>, "fret": <0-24>, "durationBeats": <positive number> },
+    ...one note per beat
+  ]
+}`;
 
   const params = {
     model: 'claude-opus-4-6',
     max_tokens: 8192,
     thinking: { type: 'adaptive' as const },
     messages: [{ role: 'user' as const, content: prompt }],
-    output_config: {
-      format: zodOutputFormat(compositionResultSchema),
-    },
   };
 
   console.log('\n[composition] → sending to Claude:');
   console.log('  model:', params.model);
   console.log('  prompt:\n' + prompt.split('\n').map((l) => '    ' + l).join('\n'));
 
-  const response = await client.messages.parse(params);
+  const response = await client.messages.create(params);
+
+  const textBlock = response.content.find((b) => b.type === 'text');
+  if (!textBlock || textBlock.type !== 'text') {
+    throw new Error('No text content in composition response from Claude');
+  }
 
   console.log('[composition] ← received from Claude:');
   console.log('  stop_reason:', response.stop_reason);
   console.log('  usage:', response.usage);
-  console.log('  parsed_output:', JSON.stringify(response.parsed_output, null, 2));
+  console.log('  raw text (truncated):', textBlock.text.slice(0, 300));
 
-  if (!response.parsed_output) throw new Error('Claude returned no structured output for composition step');
-  return response.parsed_output as CompositionResult;
+  const raw: unknown = JSON.parse(textBlock.text.trim());
+  const result = compositionResultSchema.parse(raw);
+
+  console.log('  patternName:', result.patternName);
+  console.log('  notes count:', result.notes.length);
+
+  return result;
 }
