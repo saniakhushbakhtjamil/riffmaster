@@ -88,7 +88,7 @@ Respond with ONLY a valid JSON object — no markdown, no code fences:
   const params = {
     model: 'claude-opus-4-6',
     max_tokens: 16000,
-    thinking: { type: 'adaptive' as const },
+    thinking: { type: 'enabled' as const, budget_tokens: 8000 },
     messages: [{ role: 'user' as const, content: prompt }],
   };
 
