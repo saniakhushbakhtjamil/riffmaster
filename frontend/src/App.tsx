@@ -11,6 +11,7 @@ export function App() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [asciiTab, setAsciiTab] = useState<string | null>(null);
   const [tabModel, setTabModel] = useState<TabModel | null>(null);
+  const [arrangementNotes, setArrangementNotes] = useState<string | null>(null);
   const [currentSong, setCurrentSong] = useState<{ title: string; artist: string } | null>(null);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [isComposing, setIsComposing] = useState(false);
@@ -22,6 +23,7 @@ export function App() {
       setAnalysis(null);
       setAsciiTab(null);
       setTabModel(null);
+      setArrangementNotes(null);
       setCurrentSong({ title: payload.songTitle, artist: payload.artistName });
 
       // Phase 1: analyse
@@ -35,6 +37,7 @@ export function App() {
       const response: GenerateTabResponse = await generateTab(payload);
       setAsciiTab(response.tab.ascii);
       setTabModel(response.tab.model);
+      setArrangementNotes(response.steps.composition.output.arrangementNotes);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -51,6 +54,7 @@ export function App() {
         <TabDisplay
           ascii={asciiTab}
           model={tabModel}
+          arrangementNotes={arrangementNotes}
           isLoading={isComposing}
           error={error}
           songTitle={currentSong?.title}

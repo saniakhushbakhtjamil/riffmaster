@@ -40,6 +40,7 @@ export const tabModelSchema = z.object({
 
 export const compositionResultSchema = z.object({
   patternName: z.string().min(1),
+  arrangementNotes: z.string().min(1),
   beats: z.array(beatGroupSchema)
 });
 

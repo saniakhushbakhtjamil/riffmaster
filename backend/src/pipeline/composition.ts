@@ -74,10 +74,12 @@ Beat groups — each group is one time slot. Multiple notes = played simultaneou
 - Shorter note values (0.5, 0.25) make riffs feel fast and expressive
 
 patternName: describe what you composed (e.g. "pentatonic-riff-with-arpeggio", "fingerpick-and-lick")
+arrangementNotes: 3–5 sentences explaining (1) how to physically play this arrangement — hand positions, techniques, any tricky transitions — and (2) why it is arranged this way musically — what gives it character, how it serves the song.
 
 Respond with ONLY a valid JSON object — no markdown, no code fences:
 {
   "patternName": "<short pattern name>",
+  "arrangementNotes": "<3–5 sentences on how to play and why it is arranged this way>",
   "beats": [
     { "durationBeats": 1, "notes": [{ "stringIndex": 5, "fret": 0 }] },
     { "durationBeats": 0.5, "notes": [{ "stringIndex": 2, "fret": 7 }] },
